@@ -1,0 +1,12 @@
+ورقة وقلم V5 - تجهيز البناء
+
+1) npm install
+2) npx cap add android
+3) npx cap add ios   (يتطلب macOS/Xcode)
+4) npx cap sync
+5) توليد الأيقونات/Splash من resources/icon.png و resources/splash.png باستخدام @capacitor/assets أو Android Studio/Xcode.
+6) Android: إنشاء keystore وتوقيع AAB Release.
+7) iOS: Apple Developer + Signing & Capabilities + Push Notifications.
+8) ضع google-services.json داخل android/app و GoogleService-Info.plist داخل مشروع iOS عند تفعيل Firebase.
+
+الـ Push backend يستخدم Firebase HTTP v1 ويتطلب firebase-service-account.json على السيرفر فقط، ولا يجب وضع هذا الملف داخل التطبيق.

@@ -1,0 +1,8 @@
+{
+  "appId": "com.wara2aqalam.store",
+  "appName": "ورقة وقلم",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

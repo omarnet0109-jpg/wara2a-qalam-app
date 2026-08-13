@@ -1,0 +1,19 @@
+ورقة وقلم - تطبيق V6 - حالة البناء
+
+تم تجهيزه برمجيًا لـ Android و iPhone.
+الجديد في V6:
+- كوبونات الخصم تتحقق من السيرفر ولا يثق التطبيق في قيمة خصم محلية.
+- Logout يلغي جلسة السيرفر فعليًا.
+- نسخة التطبيق 6.0.0.
+- فحص جاهزية: npm run doctor
+- أوامر تجهيز Android/iOS مضافة في package.json.
+
+قبل البناء النهائي يلزم فقط:
+1) وضع رابط API الحقيقي في www/config.js.
+2) npm install على جهاز به إنترنت.
+3) Android Studio + Android SDK لبناء AAB.
+4) Xcode على macOS لبناء iPhone.
+5) ملفات Firebase الأصلية: google-services.json لأندرويد وGoogleService-Info.plist للآيفون.
+6) مفاتيح التوقيع وحسابات المتاجر.
+
+ملاحظة: محاولة npm install داخل بيئة العمل الحالية انتهت Timeout، لذلك لم يتم الادعاء بإنشاء AAB/IPA هنا.
