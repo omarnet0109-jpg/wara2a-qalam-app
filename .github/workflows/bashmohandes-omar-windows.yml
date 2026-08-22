@@ -7,6 +7,11 @@ on:
     paths:
       - 'windows-builder/**'
       - '.github/workflows/bashmohandes-omar-windows.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'windows-builder/**'
+      - '.github/workflows/bashmohandes-omar-windows.yml'
 
 jobs:
   build-windows:
@@ -26,9 +31,7 @@ jobs:
           $b64 = ($parts | ForEach-Object { (Get-Content $_.FullName -Raw).Trim() }) -join ''
           [IO.File]::WriteAllBytes('windows-builder/source.zip', [Convert]::FromBase64String($b64))
           $hash = (Get-FileHash 'windows-builder/source.zip' -Algorithm SHA256).Hash.ToLower()
-          if ($hash -ne '20aeeb9431d3a9687eb120a0f16460ee8fb9a01d43ec9d8686a7dde43e07df0e') {
-            throw "Source archive hash mismatch: $hash"
-          }
+          if ($hash -ne '20aeeb9431d3a9687eb120a0f16460ee8fb9a01d43ec9d8686a7dde43e07df0e') { throw "Source archive hash mismatch: $hash" }
           New-Item -ItemType Directory -Force 'windows-builder/src' | Out-Null
           Expand-Archive 'windows-builder/source.zip' 'windows-builder/src' -Force
           $root = (Resolve-Path 'windows-builder/src').Path
@@ -56,7 +59,6 @@ jobs:
           from PIL import Image
           from pathlib import Path
           import hashlib, os, re
-
           root = Path(os.environ['APP_ROOT'])
           brand_dir = root / 'assets' / 'branding'
           source = Image.open(brand_dir / 'brand.jpg').convert('RGB')
@@ -64,15 +66,12 @@ jobs:
           icon = brand_dir / 'bashmohandes_omar.ico'
           source.save(logo, optimize=True)
           source.save(icon, sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
-
           digest = hashlib.sha256(logo.read_bytes()).hexdigest()
           brand_py = root / 'app' / 'brand.py'
           text = brand_py.read_text(encoding='utf-8')
           text, count = re.subn(r'LOGO_SHA256\s*=\s*"[^"]*"', f'LOGO_SHA256 = "{digest}"', text)
-          if count != 1:
-              raise RuntimeError('Could not update LOGO_SHA256')
+          if count != 1: raise RuntimeError('Could not update LOGO_SHA256')
           brand_py.write_text(text, encoding='utf-8')
-
           iss = root / 'create_setup.iss'
           s = iss.read_text(encoding='utf-8')
           s = re.sub(r'\[Languages\]\s*Name:\s*"arabic";\s*MessagesFile:[^\r\n]*\s*', '', s, flags=re.I)
