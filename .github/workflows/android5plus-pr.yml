@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    if: github.head_ref == 'build/android5plus'
+    if: github.head_ref == 'build/android5plus' || github.head_ref == 'build/android5plus-splash'
     runs-on: ubuntu-latest
 
     steps:
@@ -19,6 +19,21 @@ jobs:
           rm -rf android-native
           mkdir android-native
           unzip -q android5plus-source.zip -d android-native
+
+      - name: Apply animated splash overrides
+        if: github.head_ref == 'build/android5plus-splash'
+        run: |
+          mkdir -p android-native/app/src/main/res/drawable-nodpi
+          cp native-overrides/store_logo.jpg android-native/app/src/main/res/drawable-nodpi/store_logo.jpg
+          cp native-overrides/pen_overlay.png android-native/app/src/main/res/drawable-nodpi/pen_overlay.png
+          cp native-overrides/MainActivity.java android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
+          sed -i 's/@mipmap\/ic_launcher/@drawable\/store_logo/g' android-native/app/src/main/AndroidManifest.xml
+          sed -i 's/@mipmap\/ic_launcher_round/@drawable\/store_logo/g' android-native/app/src/main/AndroidManifest.xml
+          sed -i 's/versionCode = 2/versionCode = 3/' android-native/app/build.gradle.kts
+          sed -i 's/versionName = "1.0.1"/versionName = "1.0.2"/' android-native/app/build.gradle.kts
+          sed -i 's/@color\/navy/@color\/white/g' android-native/app/src/main/res/values-v31/styles.xml
+          sed -i 's/@drawable\/ic_splash_logo/@drawable\/store_logo/g' android-native/app/src/main/res/values-v31/styles.xml
+          grep -n 'store_logo\|versionCode\|versionName' android-native/app/src/main/AndroidManifest.xml android-native/app/build.gradle.kts android-native/app/src/main/res/values-v31/styles.xml || true
 
       - name: Fix Android SSL import
         run: |
@@ -52,6 +67,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WaraqaWaQalam-Android5Plus-APK
+          name: WaraqaWaQalam-Android5Plus-AnimatedSplash-APK
           path: android-native/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
