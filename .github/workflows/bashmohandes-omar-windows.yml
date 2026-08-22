@@ -44,6 +44,8 @@ jobs:
               parts=list(combo)
               if len(parts[8])==15999:
                   parts[8]=parts[8][:12322]+'i'+parts[8][12322:]
+              if len(parts[10])==16000 and parts[10][6752]=='W':
+                  parts[10]=parts[10][:6752]+'V'+parts[10][6753:]
               try: raw=base64.b64decode(''.join(parts),validate=True)
               except Exception: continue
               if hashlib.sha256(raw).hexdigest()==expected:
