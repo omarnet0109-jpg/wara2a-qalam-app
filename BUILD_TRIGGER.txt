@@ -1,1 +1,1 @@
-Trigger corrected final Android v1.0.11 verifier after authoritative resource-table validation fix.
+Trigger Google Play AAB readiness audit for v1.0.11: lint, permissions, manifest, target SDK 36, and bundleRelease.
