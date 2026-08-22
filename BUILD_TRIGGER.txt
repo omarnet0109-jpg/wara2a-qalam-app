@@ -1,1 +1,1 @@
-Trigger Android 5+ live-sync build with fresh web content and animated splash.
+Trigger Android 5+ live-sync build v1.0.3 with fresh web content and animated splash. Retry 2.
