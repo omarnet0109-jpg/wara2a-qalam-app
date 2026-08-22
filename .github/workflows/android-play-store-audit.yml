@@ -1,0 +1,104 @@
+name: Google Play AAB Readiness Audit
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  play-audit:
+    if: github.head_ref == 'build/android5plus-iconfix-v106'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rebuild final validated Android source
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import yaml
+          from pathlib import Path
+          wf=yaml.safe_load(Path('.github/workflows/android-final-logo-v3.yml').read_text(encoding='utf-8'))
+          step=next(s for s in wf['jobs']['build']['steps'] if s.get('name')=='Prepare final Android source')
+          Path('/tmp/prepare-final-android.sh').write_text(step['run'], encoding='utf-8')
+          PY
+          bash /tmp/prepare-final-android.sh
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Lint final source
+        working-directory: android-native
+        run: gradle :app:lintRelease --stacktrace
+
+      - name: Build APK and AAB
+        working-directory: android-native
+        run: gradle :app:assembleRelease :app:bundleRelease --stacktrace
+
+      - name: Audit Play-facing manifest and permissions
+        run: |
+          set -euo pipefail
+          APK=android-native/app/build/outputs/apk/release/app-release-unsigned.apk
+          AAB=android-native/app/build/outputs/bundle/release/app-release.aab
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt2"
+          test -s "$APK"
+          test -s "$AAB"
+
+          BADGING="$($AAPT dump badging "$APK")"
+          printf '%s\n' "$BADGING" > play-badging.txt
+          printf '%s\n' "$BADGING" | grep "package: name='com.waraqawqalam.store' versionCode='12' versionName='1.0.11'"
+          printf '%s\n' "$BADGING" | grep "sdkVersion:'21'"
+          printf '%s\n' "$BADGING" | grep "targetSdkVersion:'36'"
+          printf '%s\n' "$BADGING" | grep "launchable-activity: name='com.waraqawqalam.store.SplashActivity'"
+
+          printf '%s\n' "$BADGING" | grep '^uses-permission:' > play-permissions.txt || true
+          echo '=== Declared permissions ==='
+          cat play-permissions.txt || true
+
+          # Fail on permissions that would materially complicate Play review and are not needed by this storefront wrapper.
+          if grep -E "(READ_SMS|SEND_SMS|RECEIVE_SMS|READ_CALL_LOG|WRITE_CALL_LOG|PROCESS_OUTGOING_CALLS|MANAGE_EXTERNAL_STORAGE|REQUEST_INSTALL_PACKAGES|QUERY_ALL_PACKAGES|RECORD_AUDIO|CAMERA|ACCESS_FINE_LOCATION|ACCESS_BACKGROUND_LOCATION|READ_CONTACTS|WRITE_CONTACTS|BODY_SENSORS|READ_PHONE_STATE)" play-permissions.txt; then
+            echo 'ERROR: high-risk/unneeded permission detected'; exit 1
+          fi
+
+          MANIFEST="$($AAPT dump xmltree --file AndroidManifest.xml "$APK")"
+          printf '%s\n' "$MANIFEST" > play-manifest-tree.txt
+          printf '%s\n' "$MANIFEST" | grep -F 'com.waraqawqalam.store.SplashActivity'
+          printf '%s\n' "$MANIFEST" | grep -F 'com.waraqawqalam.store.MainActivity'
+
+          cat > PLAY_STORE_AUDIT.txt <<EOF
+          Google Play technical audit: PASSED
+          Package: com.waraqawqalam.store
+          Version: 1.0.11 (12)
+          minSdk: 21
+          targetSdk: 36
+          Launcher: SplashActivity
+          Android App Bundle: generated successfully
+          Release lint: passed
+          High-risk/unneeded permissions: none detected by audit list
+          Store architecture: first-party storefront WebView plus native navigation/share/download/file chooser/splash
+          Note: Play Console policy declarations, privacy-policy URL, data-safety answers, content rating, target audience, and proof of website ownership are account/content requirements and cannot be proven by the Android binary alone.
+          EOF
+          cat PLAY_STORE_AUDIT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WaraqaWaQalam-GooglePlay-v1.0.11-AAB-AUDITED
+          path: |
+            android-native/app/build/outputs/bundle/release/app-release.aab
+            PLAY_STORE_AUDIT.txt
+            play-permissions.txt
+            play-badging.txt
+            play-manifest-tree.txt
+            android-native/app/build/reports/lint-results-release.html
+          if-no-files-found: error
