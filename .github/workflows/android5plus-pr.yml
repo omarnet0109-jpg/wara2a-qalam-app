@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    if: github.head_ref == 'build/android5plus' || github.head_ref == 'build/android5plus-splash' || github.head_ref == 'build/android5plus-iconfix-v106'
+    if: github.head_ref == 'build/android5plus-iconfix-v106'
     runs-on: ubuntu-latest
 
     steps:
@@ -20,30 +20,18 @@ jobs:
           mkdir android-native
           unzip -q android5plus-source.zip -d android-native
 
-      - name: Apply v1.0.6 launcher icon and image fixes
-        if: github.head_ref == 'build/android5plus-iconfix-v106'
+      - name: Apply v1.0.7 definitive launcher fix
         run: |
           mkdir -p android-native/app/src/main/res/drawable-nodpi
-          mkdir -p android-native/app/src/main/res/mipmap-mdpi
-          mkdir -p android-native/app/src/main/res/mipmap-hdpi
-          mkdir -p android-native/app/src/main/res/mipmap-xhdpi
-          mkdir -p android-native/app/src/main/res/mipmap-xxhdpi
-          mkdir -p android-native/app/src/main/res/mipmap-xxxhdpi
           mkdir -p android-native/app/src/main/res/mipmap-anydpi-v26
 
           cp native-overrides/store_logo.jpg android-native/app/src/main/res/drawable-nodpi/store_logo.jpg
           cp native-overrides/pen_overlay.png android-native/app/src/main/res/drawable-nodpi/pen_overlay.png
           cp native-overrides/MainActivity.java android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
 
-          rm -f android-native/app/src/main/res/mipmap/ic_launcher.xml
-          rm -f android-native/app/src/main/res/mipmap/ic_launcher_round.xml
           rm -f android-native/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
           rm -f android-native/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
-
-          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            cp native-overrides/store_logo.jpg android-native/app/src/main/res/mipmap-$d/ic_launcher.jpg
-            cp native-overrides/store_logo.jpg android-native/app/src/main/res/mipmap-$d/ic_launcher_round.jpg
-          done
+          rm -f android-native/app/src/main/res/drawable/ic_launcher_foreground.xml
 
           cat > android-native/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
@@ -51,25 +39,25 @@ jobs:
               <foreground android:drawable="@drawable/store_logo" />
           </adaptive-icon>
           EOF
-
           cp android-native/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml android-native/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
           sed -i 's#android:icon="[^"]*"#android:icon="@mipmap/ic_launcher"#' android-native/app/src/main/AndroidManifest.xml
           sed -i 's#android:roundIcon="[^"]*"#android:roundIcon="@mipmap/ic_launcher_round"#' android-native/app/src/main/AndroidManifest.xml
           sed -i 's/android:usesCleartextTraffic="false"/android:usesCleartextTraffic="true"/' android-native/app/src/main/AndroidManifest.xml
-          sed -i 's/versionCode = 2/versionCode = 7/' android-native/app/build.gradle.kts
-          sed -i 's/versionName = "1.0.1"/versionName = "1.0.6"/' android-native/app/build.gradle.kts
+          sed -i 's/versionCode = 2/versionCode = 8/' android-native/app/build.gradle.kts
+          sed -i 's/versionName = "1.0.1"/versionName = "1.0.7"/' android-native/app/build.gradle.kts
           sed -i 's/@color\/navy/@color\/white/g' android-native/app/src/main/res/values-v31/styles.xml
           sed -i 's/@drawable\/ic_splash_logo/@drawable\/store_logo/g' android-native/app/src/main/res/values-v31/styles.xml
           sed -i 's/s.setJavaScriptEnabled(true);/s.setJavaScriptEnabled(true);s.setCacheMode(WebSettings.LOAD_NO_CACHE);s.setBlockNetworkImage(false);/' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
           sed -i 's/WebSettings.MIXED_CONTENT_NEVER_ALLOW/WebSettings.MIXED_CONTENT_ALWAYS_ALLOW/g' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
 
+          echo '--- adaptive icon source ---'
+          cat android-native/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          echo '--- manifest icon refs ---'
           grep -n 'android:icon\|android:roundIcon\|usesCleartextTraffic' android-native/app/src/main/AndroidManifest.xml
-          grep -n 'versionCode\|versionName' android-native/app/build.gradle.kts
 
       - name: Fix Android SSL import
-        run: |
-          sed -i 's/import android.webkit.SslError;/import android.net.http.SslError;/' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
+        run: sed -i 's/import android.webkit.SslError;/import android.net.http.SslError;/' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -92,16 +80,20 @@ jobs:
         working-directory: android-native
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Verify APK and launcher resources
+      - name: Verify APK launcher resources
         run: |
           APK=android-native/app/build/outputs/apk/debug/app-debug.apk
           test -s "$APK"
-          unzip -l "$APK" | grep -E 'store_logo|pen_overlay|mipmap-.*/ic_launcher|mipmap-anydpi-v26/ic_launcher'
+          unzip -l "$APK" | grep -E 'store_logo|pen_overlay|mipmap-anydpi-v26/ic_launcher'
           "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "$APK" | grep -E 'package:|application:|application-icon'
+          if unzip -p "$APK" res/drawable/ic_launcher_foreground.xml >/dev/null 2>&1; then
+            echo 'ERROR: old default foreground still packaged'
+            exit 1
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WaraqaWaQalam-Android5Plus-v1.0.6-LauncherFix
+          name: WaraqaWaQalam-Android5Plus-v1.0.7-DefinitiveIconFix
           path: android-native/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
