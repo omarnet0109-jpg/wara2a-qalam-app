@@ -19,6 +19,8 @@ jobs:
       - name: Prepare clean final patch payload
         shell: pwsh
         run: |
+          python .\windows-builder\repair_chunk.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Remove-Item 'windows-builder/final_patch.b64.*' -Force -ErrorAction SilentlyContinue
           $parts = Get-ChildItem 'windows-builder/final_clean.b64.*' | Sort-Object Name
           if ($parts.Count -ne 6) { throw "Expected 6 clean patch parts, found $($parts.Count)" }
