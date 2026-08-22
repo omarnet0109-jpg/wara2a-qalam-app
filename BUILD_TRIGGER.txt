@@ -1,1 +1,1 @@
-Trigger Android 5+ v1.0.5 final build: force custom adaptive/legacy launcher icon, allow product HTTP subresources, animated splash, live web sync.
+Trigger Android 5+ v1.0.6 build: real launcher mipmap resources on all densities, adaptive icon, animated splash, product image loading, live web sync.
