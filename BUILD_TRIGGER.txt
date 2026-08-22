@@ -1,1 +1,1 @@
-Trigger Google Play AAB readiness audit for v1.0.11: lint, permissions, manifest, target SDK 36, and bundleRelease.
+Trigger Google Play full lint diagnostic and AAB build for v1.0.11 after audit workflow update.
