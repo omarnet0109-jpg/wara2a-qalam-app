@@ -1,1 +1,1 @@
-Trigger final verified Android v1.0.11 build with adaptive icon, native splash, and authoritative aapt2 APK verification.
+Trigger corrected final Android v1.0.11 verifier after authoritative resource-table validation fix.
