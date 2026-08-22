@@ -38,9 +38,30 @@ jobs:
         with:
           gradle-version: '9.4.1'
 
-      - name: Lint final source
+      - name: Collect full lint report
         working-directory: android-native
-        run: gradle :app:lintRelease --stacktrace
+        run: |
+          set +e
+          gradle :app:lintRelease --stacktrace
+          RC=$?
+          echo "lint_exit=$RC" > ../lint-status.txt
+          REPORT=app/build/intermediates/lint_intermediate_text_report/release/lintReportRelease/lint-results-release.txt
+          if [ -f "$REPORT" ]; then
+            cp "$REPORT" ../lint-results-release.txt
+            echo '=== FULL LINT REPORT ==='
+            cat "$REPORT"
+          fi
+          exit 0
+
+      - name: Upload diagnostic lint report
+        uses: actions/upload-artifact@v4
+        with:
+          name: WaraqaWaQalam-Play-Lint-Diagnostic
+          path: |
+            lint-status.txt
+            lint-results-release.txt
+            android-native/app/build/reports/lint-results-release.html
+          if-no-files-found: warn
 
       - name: Build APK and AAB
         working-directory: android-native
@@ -65,8 +86,6 @@ jobs:
           printf '%s\n' "$BADGING" | grep '^uses-permission:' > play-permissions.txt || true
           echo '=== Declared permissions ==='
           cat play-permissions.txt || true
-
-          # Fail on permissions that would materially complicate Play review and are not needed by this storefront wrapper.
           if grep -E "(READ_SMS|SEND_SMS|RECEIVE_SMS|READ_CALL_LOG|WRITE_CALL_LOG|PROCESS_OUTGOING_CALLS|MANAGE_EXTERNAL_STORAGE|REQUEST_INSTALL_PACKAGES|QUERY_ALL_PACKAGES|RECORD_AUDIO|CAMERA|ACCESS_FINE_LOCATION|ACCESS_BACKGROUND_LOCATION|READ_CONTACTS|WRITE_CONTACTS|BODY_SENSORS|READ_PHONE_STATE)" play-permissions.txt; then
             echo 'ERROR: high-risk/unneeded permission detected'; exit 1
           fi
@@ -77,28 +96,23 @@ jobs:
           printf '%s\n' "$MANIFEST" | grep -F 'com.waraqawqalam.store.MainActivity'
 
           cat > PLAY_STORE_AUDIT.txt <<EOF
-          Google Play technical audit: PASSED
+          Google Play technical audit: diagnostic build generated
           Package: com.waraqawqalam.store
           Version: 1.0.11 (12)
           minSdk: 21
           targetSdk: 36
           Launcher: SplashActivity
           Android App Bundle: generated successfully
-          Release lint: passed
           High-risk/unneeded permissions: none detected by audit list
-          Store architecture: first-party storefront WebView plus native navigation/share/download/file chooser/splash
-          Note: Play Console policy declarations, privacy-policy URL, data-safety answers, content rating, target audience, and proof of website ownership are account/content requirements and cannot be proven by the Android binary alone.
           EOF
-          cat PLAY_STORE_AUDIT.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: WaraqaWaQalam-GooglePlay-v1.0.11-AAB-AUDITED
+          name: WaraqaWaQalam-GooglePlay-v1.0.11-AAB-DIAGNOSTIC
           path: |
             android-native/app/build/outputs/bundle/release/app-release.aab
             PLAY_STORE_AUDIT.txt
             play-permissions.txt
             play-badging.txt
             play-manifest-tree.txt
-            android-native/app/build/reports/lint-results-release.html
           if-no-files-found: error
