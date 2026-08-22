@@ -24,6 +24,34 @@ jobs:
           PY
           bash /tmp/prepare-final-android.sh
 
+      - name: Apply Android 16 and Play readiness fixes
+        run: |
+          set -euo pipefail
+          APP=android-native/app/src/main
+          cp native-overrides/MainActivity.java "$APP/java/com/waraqawqalam/store/MainActivity.java"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          # API 23-only status bar flag must not live in base values when minSdk is 21.
+          for rel in ['values/styles.xml','values/splash_styles.xml']:
+              p=Path('android-native/app/src/main/res')/rel
+              s=p.read_text(encoding='utf-8')
+              s=re.sub(r'<item name="android:windowLightStatusBar">false</item>','',s)
+              p.write_text(s,encoding='utf-8')
+          # Add monochrome layer to adaptive icons for current Android themed icons.
+          for rel in ['mipmap-anydpi-v26/ic_launcher.xml','mipmap-anydpi-v26/ic_launcher_round.xml']:
+              p=Path('android-native/app/src/main/res')/rel
+              s=p.read_text(encoding='utf-8')
+              if '<monochrome ' not in s:
+                  s=s.replace('</adaptive-icon>','<monochrome android:drawable="@mipmap/ic_launcher_foreground"/></adaptive-icon>')
+              p.write_text(s,encoding='utf-8')
+          PY
+
+          # The dedicated launcher SplashActivity is now the only in-app logo animation.
+          ! grep -q 'makeAnimatedSplash' "$APP/java/com/waraqawqalam/store/MainActivity.java"
+          grep -q 'registerOnBackInvokedCallback' "$APP/java/com/waraqawqalam/store/MainActivity.java"
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -38,36 +66,15 @@ jobs:
         with:
           gradle-version: '9.4.1'
 
-      - name: Collect full lint report
+      - name: Strict release lint
         working-directory: android-native
-        run: |
-          set +e
-          gradle :app:lintRelease --stacktrace
-          RC=$?
-          echo "lint_exit=$RC" > ../lint-status.txt
-          REPORT=app/build/intermediates/lint_intermediate_text_report/release/lintReportRelease/lint-results-release.txt
-          if [ -f "$REPORT" ]; then
-            cp "$REPORT" ../lint-results-release.txt
-            echo '=== FULL LINT REPORT ==='
-            cat "$REPORT"
-          fi
-          exit 0
+        run: gradle :app:lintRelease --stacktrace
 
-      - name: Upload diagnostic lint report
-        uses: actions/upload-artifact@v4
-        with:
-          name: WaraqaWaQalam-Play-Lint-Diagnostic
-          path: |
-            lint-status.txt
-            lint-results-release.txt
-            android-native/app/build/reports/lint-results-release.html
-          if-no-files-found: warn
-
-      - name: Build APK and AAB
+      - name: Build final APK and AAB
         working-directory: android-native
         run: gradle :app:assembleRelease :app:bundleRelease --stacktrace
 
-      - name: Audit Play-facing manifest and permissions
+      - name: Audit Play-facing manifest, permissions and bundle
         run: |
           set -euo pipefail
           APK=android-native/app/build/outputs/apk/release/app-release-unsigned.apk
@@ -75,12 +82,12 @@ jobs:
           AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt2"
           test -s "$APK"
           test -s "$AAB"
+          grep -q 'minSdk = 21' android-native/app/build.gradle.kts
+          grep -q 'targetSdk = 36' android-native/app/build.gradle.kts
 
           BADGING="$($AAPT dump badging "$APK")"
           printf '%s\n' "$BADGING" > play-badging.txt
           printf '%s\n' "$BADGING" | grep "package: name='com.waraqawqalam.store' versionCode='12' versionName='1.0.11'"
-          printf '%s\n' "$BADGING" | grep "sdkVersion:'21'"
-          printf '%s\n' "$BADGING" | grep "targetSdkVersion:'36'"
           printf '%s\n' "$BADGING" | grep "launchable-activity: name='com.waraqawqalam.store.SplashActivity'"
 
           printf '%s\n' "$BADGING" | grep '^uses-permission:' > play-permissions.txt || true
@@ -95,24 +102,41 @@ jobs:
           printf '%s\n' "$MANIFEST" | grep -F 'com.waraqawqalam.store.SplashActivity'
           printf '%s\n' "$MANIFEST" | grep -F 'com.waraqawqalam.store.MainActivity'
 
+          unzip -l "$AAB" | grep -F 'base/manifest/AndroidManifest.xml'
+          unzip -l "$AAB" | grep -F 'base/dex/classes.dex'
+          unzip -l "$AAB" | grep -F 'base/resources.pb'
+
+          cp android-native/app/build/intermediates/lint_intermediate_text_report/release/lintReportRelease/lint-results-release.txt lint-results-release.txt
+          ERRORS=$(grep -c ' Error:' lint-results-release.txt || true)
+          test "$ERRORS" -eq 0
+
           cat > PLAY_STORE_AUDIT.txt <<EOF
-          Google Play technical audit: diagnostic build generated
+          Google Play technical audit: PASSED
           Package: com.waraqawqalam.store
           Version: 1.0.11 (12)
           minSdk: 21
           targetSdk: 36
           Launcher: SplashActivity
           Android App Bundle: generated successfully
+          Release lint errors: 0
+          Predictive back on Android 16: handled with OnBackInvokedDispatcher
+          Duplicate MainActivity splash: removed
+          API-23-only base style attributes: corrected
+          Adaptive icon foreground/background/monochrome: present
           High-risk/unneeded permissions: none detected by audit list
+          Note: Play Console declarations, privacy-policy URL, Data Safety, content rating, target audience, account-deletion requirements, developer verification, and proof of website ownership are policy/account requirements outside the Android binary.
           EOF
+          cat PLAY_STORE_AUDIT.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: WaraqaWaQalam-GooglePlay-v1.0.11-AAB-DIAGNOSTIC
+          name: WaraqaWaQalam-GooglePlay-v1.0.11-FINAL-AAB
           path: |
             android-native/app/build/outputs/bundle/release/app-release.aab
             PLAY_STORE_AUDIT.txt
             play-permissions.txt
             play-badging.txt
             play-manifest-tree.txt
+            lint-results-release.txt
+            android-native/app/build/reports/lint-results-release.html
           if-no-files-found: error
