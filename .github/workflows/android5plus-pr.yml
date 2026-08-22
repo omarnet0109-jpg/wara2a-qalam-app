@@ -20,7 +20,7 @@ jobs:
           mkdir android-native
           unzip -q android5plus-source.zip -d android-native
 
-      - name: Apply animated splash overrides
+      - name: Apply animated splash and image-loading fixes
         if: github.head_ref == 'build/android5plus-splash'
         run: |
           mkdir -p android-native/app/src/main/res/drawable-nodpi
@@ -30,12 +30,13 @@ jobs:
           sed -i 's/@mipmap\/ic_launcher_round/@drawable\/store_logo/g' android-native/app/src/main/AndroidManifest.xml
           sed -i 's/@mipmap\/ic_launcher/@drawable\/store_logo/g' android-native/app/src/main/AndroidManifest.xml
           sed -i 's/@drawable\/store_logo_round/@drawable\/store_logo/g' android-native/app/src/main/AndroidManifest.xml
-          sed -i 's/versionCode = 2/versionCode = 4/' android-native/app/build.gradle.kts
-          sed -i 's/versionName = "1.0.1"/versionName = "1.0.3"/' android-native/app/build.gradle.kts
+          sed -i 's/versionCode = 2/versionCode = 5/' android-native/app/build.gradle.kts
+          sed -i 's/versionName = "1.0.1"/versionName = "1.0.4"/' android-native/app/build.gradle.kts
           sed -i 's/@color\/navy/@color\/white/g' android-native/app/src/main/res/values-v31/styles.xml
           sed -i 's/@drawable\/ic_splash_logo/@drawable\/store_logo/g' android-native/app/src/main/res/values-v31/styles.xml
-          sed -i 's/s.setJavaScriptEnabled(true);/s.setJavaScriptEnabled(true);s.setCacheMode(WebSettings.LOAD_NO_CACHE);webView.clearCache(true);/' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
-          grep -n 'store_logo\|versionCode\|versionName\|LOAD_NO_CACHE' android-native/app/src/main/AndroidManifest.xml android-native/app/build.gradle.kts android-native/app/src/main/res/values-v31/styles.xml android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java || true
+          sed -i 's/s.setJavaScriptEnabled(true);/s.setJavaScriptEnabled(true);s.setCacheMode(WebSettings.LOAD_NO_CACHE);webView.clearCache(true);s.setBlockNetworkImage(false);/' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
+          sed -i 's/WebSettings.MIXED_CONTENT_NEVER_ALLOW/WebSettings.MIXED_CONTENT_ALWAYS_ALLOW/g' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
+          grep -n 'store_logo\|versionCode\|versionName\|LOAD_NO_CACHE\|MIXED_CONTENT_ALWAYS_ALLOW\|setBlockNetworkImage' android-native/app/src/main/AndroidManifest.xml android-native/app/build.gradle.kts android-native/app/src/main/res/values-v31/styles.xml android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java || true
 
       - name: Fix Android SSL import
         run: |
@@ -54,21 +55,6 @@ jobs:
       - name: Install Android 36 SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Export apksigner tool
-        run: |
-          mkdir -p apksigner-tool/lib
-          cp "$ANDROID_HOME/build-tools/36.0.0/apksigner" apksigner-tool/apksigner
-          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" apksigner-tool/lib/apksigner.jar
-          chmod +x apksigner-tool/apksigner
-          ./apksigner-tool/apksigner version
-
-      - name: Upload apksigner tool
-        uses: actions/upload-artifact@v4
-        with:
-          name: Android-apksigner-36
-          path: apksigner-tool
-          if-no-files-found: error
-
       - name: Set up Gradle 9.4.1
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -84,6 +70,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WaraqaWaQalam-Android5Plus-LiveSync-APK
+          name: WaraqaWaQalam-Android5Plus-v1.0.4-FixedImagesLogo
           path: android-native/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
