@@ -54,6 +54,21 @@ jobs:
       - name: Install Android 36 SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Export apksigner tool
+        run: |
+          mkdir -p apksigner-tool/lib
+          cp "$ANDROID_HOME/build-tools/36.0.0/apksigner" apksigner-tool/apksigner
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" apksigner-tool/lib/apksigner.jar
+          chmod +x apksigner-tool/apksigner
+          ./apksigner-tool/apksigner version
+
+      - name: Upload apksigner tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-apksigner-36
+          path: apksigner-tool
+          if-no-files-found: error
+
       - name: Set up Gradle 9.4.1
         uses: gradle/actions/setup-gradle@v4
         with:
