@@ -20,7 +20,7 @@ jobs:
           mkdir android-native
           unzip -q android5plus-source.zip -d android-native
 
-      - name: Apply v1.0.9 launcher cache-bust and splash fix
+      - name: Apply v1.0.10 real launcher activity and splash
         run: |
           set -e
           APP=android-native/app/src/main
@@ -28,9 +28,9 @@ jobs:
           mkdir -p "$APP/res/drawable-nodpi" "$APP/res/values" "$APP/res/values-v31"
 
           cp native-overrides/store_logo.jpg "$APP/res/drawable-nodpi/store_logo.jpg"
-          find "$APP/res" -type f \( -name 'ic_launcher*' -o -name 'ic_store*' \) -delete || true
+          find "$APP/res" -type f \( -name 'ic_launcher*' -o -name 'ic_store*' -o -name 'ic_launcher_foreground*' \) -delete || true
 
-          cat > "$PKG/SplashActivity.java" <<'JAVA'
+          cat > "$PKG/LauncherV110Activity.java" <<'JAVA'
           package com.waraqawqalam.store;
 
           import android.app.Activity;
@@ -42,26 +42,39 @@ jobs:
           import android.widget.FrameLayout;
           import android.widget.ImageView;
 
-          public class SplashActivity extends Activity {
+          public class LauncherV110Activity extends Activity {
+              private boolean opened = false;
+
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   FrameLayout root = new FrameLayout(this);
                   root.setBackgroundColor(Color.WHITE);
+
                   ImageView logo = new ImageView(this);
                   logo.setImageResource(R.drawable.store_logo);
                   logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
                   logo.setAlpha(0f);
-                  logo.setScaleX(0.72f);
-                  logo.setScaleY(0.72f);
-                  int size = (int) (280 * getResources().getDisplayMetrics().density);
-                  root.addView(logo, new FrameLayout.LayoutParams(size, size, Gravity.CENTER));
+                  logo.setScaleX(0.68f);
+                  logo.setScaleY(0.68f);
+
+                  int size = (int) (285 * getResources().getDisplayMetrics().density);
+                  FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(size, size, Gravity.CENTER);
+                  root.addView(logo, lp);
                   setContentView(root);
-                  logo.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(700)
-                      .withEndAction(() -> root.postDelayed(this::openStore, 250)).start();
+
+                  logo.animate()
+                      .alpha(1f)
+                      .scaleX(1f)
+                      .scaleY(1f)
+                      .setDuration(700)
+                      .withEndAction(() -> root.postDelayed(this::openStore, 300))
+                      .start();
               }
 
               private void openStore() {
+                  if (opened) return;
+                  opened = true;
                   Intent next = new Intent(this, MainActivity.class);
                   Uri data = getIntent().getData();
                   if (data != null) next.setData(data);
@@ -104,12 +117,15 @@ jobs:
           p='android-native/app/src/main/AndroidManifest.xml'
           ET.register_namespace('android','http://schemas.android.com/apk/res/android')
           ns='{http://schemas.android.com/apk/res/android}'
-          tree=ET.parse(p); root=tree.getroot(); app=root.find('application')
+          tree=ET.parse(p)
+          root=tree.getroot()
+          app=root.find('application')
+
           app.set(ns+'icon','@drawable/store_logo')
           app.set(ns+'roundIcon','@drawable/store_logo')
           app.set(ns+'usesCleartextTraffic','true')
 
-          # Remove old launcher filters and aliases. Preserve normal/deep-link filters.
+          # Remove every old MAIN/LAUNCHER filter and all aliases.
           for act in list(app.findall('activity')):
               for filt in list(act.findall('intent-filter')):
                   actions=[x.get(ns+'name') for x in filt.findall('action')]
@@ -119,33 +135,25 @@ jobs:
           for alias in list(app.findall('activity-alias')):
               app.remove(alias)
 
-          # Ensure SplashActivity exists before the alias and has the real logo explicitly.
-          old=None
-          for act in app.findall('activity'):
-              if act.get(ns+'name') in ('.SplashActivity','com.waraqawqalam.store.SplashActivity'):
-                  old=act; break
-          if old is not None:
-              app.remove(old)
-          splash=ET.Element('activity')
-          splash.set(ns+'name','.SplashActivity')
-          splash.set(ns+'exported','true')
-          splash.set(ns+'theme','@style/SplashTheme')
-          splash.set(ns+'icon','@drawable/store_logo')
-          splash.set(ns+'label','@string/app_name')
-          app.insert(0,splash)
+          # Remove previous custom launcher/splash activities from manifest, if any.
+          for act in list(app.findall('activity')):
+              name=act.get(ns+'name','')
+              if name in ('.SplashActivity','.LauncherV109','.LauncherV110Activity','com.waraqawqalam.store.SplashActivity','com.waraqawqalam.store.LauncherV110Activity'):
+                  app.remove(act)
 
-          # NEW launcher component identity forces OEM launcher to refresh its cached icon.
-          alias=ET.Element('activity-alias')
-          alias.set(ns+'name','.LauncherV109')
-          alias.set(ns+'targetActivity','.SplashActivity')
-          alias.set(ns+'exported','true')
-          alias.set(ns+'enabled','true')
-          alias.set(ns+'icon','@drawable/store_logo')
-          alias.set(ns+'label','@string/app_name')
-          f=ET.SubElement(alias,'intent-filter')
+          # New REAL launcher Activity. New component name busts OEM launcher icon cache.
+          launch=ET.Element('activity')
+          launch.set(ns+'name','.LauncherV110Activity')
+          launch.set(ns+'exported','true')
+          launch.set(ns+'enabled','true')
+          launch.set(ns+'theme','@style/SplashTheme')
+          launch.set(ns+'icon','@drawable/store_logo')
+          launch.set(ns+'roundIcon','@drawable/store_logo')
+          launch.set(ns+'label','@string/app_name')
+          f=ET.SubElement(launch,'intent-filter')
           a=ET.SubElement(f,'action'); a.set(ns+'name','android.intent.action.MAIN')
           c=ET.SubElement(f,'category'); c.set(ns+'name','android.intent.category.LAUNCHER')
-          app.append(alias)
+          app.insert(0,launch)
 
           tree.write(p,encoding='utf-8',xml_declaration=True)
           PY
@@ -154,11 +162,11 @@ jobs:
           sed -i 's/WebSettings.MIXED_CONTENT_NEVER_ALLOW/WebSettings.MIXED_CONTENT_ALWAYS_ALLOW/g' "$PKG/MainActivity.java" || true
           sed -i 's/s.setJavaScriptEnabled(true);/s.setJavaScriptEnabled(true); s.setCacheMode(WebSettings.LOAD_NO_CACHE); s.setBlockNetworkImage(false);/' "$PKG/MainActivity.java" || true
 
-          sed -i 's/versionCode = 2/versionCode = 10/' android-native/app/build.gradle.kts
-          sed -i 's/versionName = "1.0.1"/versionName = "1.0.9"/' android-native/app/build.gradle.kts
+          sed -i 's/versionCode = 2/versionCode = 11/' android-native/app/build.gradle.kts
+          sed -i 's/versionName = "1.0.1"/versionName = "1.0.10"/' android-native/app/build.gradle.kts
 
-          grep -n 'LauncherV109\|SplashActivity\|store_logo\|LAUNCHER' "$APP/AndroidManifest.xml"
-          if find "$APP/res" -type f \( -name 'ic_launcher*' -o -name 'ic_store*' \) | grep .; then
+          grep -n 'LauncherV110Activity\|store_logo\|LAUNCHER' "$APP/AndroidManifest.xml"
+          if find "$APP/res" -type f \( -name 'ic_launcher*' -o -name 'ic_store*' -o -name 'ic_launcher_foreground*' \) | grep .; then
             echo 'ERROR: old launcher resources still exist'; exit 1
           fi
 
@@ -184,7 +192,7 @@ jobs:
       - name: Upload apksigner tool
         uses: actions/upload-artifact@v4
         with:
-          name: Android-apksigner-36-v109
+          name: Android-apksigner-36-v110
           path: apksigner-tool
           if-no-files-found: error
 
@@ -197,24 +205,24 @@ jobs:
         working-directory: android-native
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Verify launcher component and real logo
+      - name: Verify Android sees exact launcher icon
         run: |
           set -e
           APK=android-native/app/build/outputs/apk/debug/app-debug.apk
           test -s "$APK"
-          unzip -l "$APK" | grep 'store_logo'
+          unzip -l "$APK" | grep 'res/drawable-nodpi-v4/store_logo.jpg'
           if unzip -l "$APK" | grep -E 'ic_launcher|ic_store|ic_launcher_foreground'; then
-            echo 'ERROR: old launcher resource packaged'; exit 1
+            echo 'ERROR: old Android Studio icon resource packaged'; exit 1
           fi
           BADGING=$("$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "$APK")
           echo "$BADGING" | grep -E 'package:|application:|launchable-activity'
-          echo "$BADGING" | grep "launchable-activity: name='com.waraqawqalam.store.LauncherV109'"
+          echo "$BADGING" | grep "launchable-activity: name='com.waraqawqalam.store.LauncherV110Activity'"
           echo "$BADGING" | grep "launchable-activity:.*icon='res/drawable-nodpi-v4/store_logo.jpg'"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump xmltree --file AndroidManifest.xml "$APK" | grep -E 'LauncherV109|SplashActivity|store_logo'
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump xmltree --file AndroidManifest.xml "$APK" | grep -E 'LauncherV110Activity|store_logo'
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WaraqaWaQalam-Android5Plus-v1.0.9-LauncherCacheBust
+          name: WaraqaWaQalam-Android5Plus-v1.0.10-RealLauncherLogo
           path: android-native/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
