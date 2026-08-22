@@ -1,1 +1,1 @@
-Trigger Android 5+ APK validation build after SSL import fix.
+Trigger Android 5+ animated splash APK validation build after round icon fix.
