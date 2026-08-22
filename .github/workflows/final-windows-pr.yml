@@ -1,0 +1,31 @@
+name: Verify Final Windows Release
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-windows-final:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+      - name: Build test package
+        shell: pwsh
+        run: .\windows-builder\final_ci.ps1
+      - name: Upload final files
+        uses: actions/upload-artifact@v4
+        with:
+          name: BashmohandesOmar-Final-Windows-v9.1
+          path: |
+            Program-Source-Final.zip
+            Program-Setup-Final.exe
+            Program-Portable-Final.zip
+          if-no-files-found: error
+          retention-days: 30
