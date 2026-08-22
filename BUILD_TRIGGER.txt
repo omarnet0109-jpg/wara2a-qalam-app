@@ -1,1 +1,1 @@
-Trigger Android 5+ v1.0.10: real LauncherV110Activity with exact Waraqa Wa Qalam logo, logo-first splash, same package/data and live web sync.
+Trigger Android final v1.0.11: full adaptive launcher icon matrix + branded native splash + dedicated SplashActivity + release APK validation.
