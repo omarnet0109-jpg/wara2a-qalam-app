@@ -1,1 +1,1 @@
-Trigger Android 5+ v1.0.7 definitive adaptive launcher icon fix using real Waraqa Wa Qalam logo.
+Trigger Android 5+ v1.0.7 definitive adaptive launcher icon fix using real Waraqa Wa Qalam logo. Rebuild with exported apksigner.
