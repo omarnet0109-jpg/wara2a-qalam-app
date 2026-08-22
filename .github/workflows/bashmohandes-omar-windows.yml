@@ -22,7 +22,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Restore and verify source archive
+      - name: Restore and verify source files
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -30,12 +30,29 @@ jobs:
           if ($parts.Count -ne 12) { throw "Expected 12 source parts, found $($parts.Count)." }
           $b64 = ($parts | ForEach-Object { (Get-Content $_.FullName -Raw).Trim() }) -join ''
           [IO.File]::WriteAllBytes('windows-builder/source.zip', [Convert]::FromBase64String($b64))
-          $hash = (Get-FileHash 'windows-builder/source.zip' -Algorithm SHA256).Hash.ToLower()
-          if ($hash -ne '20aeeb9431d3a9687eb120a0f16460ee8fb9a01d43ec9d8686a7dde43e07df0e') { throw "Source archive hash mismatch: $hash" }
           New-Item -ItemType Directory -Force 'windows-builder/src' | Out-Null
           Expand-Archive 'windows-builder/source.zip' 'windows-builder/src' -Force
           $root = (Resolve-Path 'windows-builder/src').Path
-          if (-not (Test-Path "$root\app\main.py")) { throw 'app/main.py is missing.' }
+          $expected = @{
+            'app\academy.py'='29f0a687816e73d8f6a04e1d41734cc9bfb9b25615bbb07bc61b826965d1d374'
+            'app\brand.py'='6f54f5cf88f8e1dc0c7e52f417dafb561b5644c011a8e6d5ae82f023d4122c1e'
+            'app\designer_tools.py'='5cde4ca13ab4da0212522569566d35823445eadf7fde28b413fb440a51fcbfc4'
+            'app\main.py'='ba21117a9a43d377c29ca4c6a4a2c51aa04cfb49716eec508b48cc8815a59912'
+            'app\mysql_manager.py'='cdb2c80e2a4c9615b030661029afd8fe37f7539a05f21e4d0202768e231f7c69'
+            'app\php_studio.py'='1eef998825c7fef856b07e8515f5456a996b13a2659d1ac4acb1f42419443c15'
+            'app\pro_tools.py'='1b684d4f9a6dbbabb12a762d47ac887f388a38cb4da42274b16234081d5f0492'
+            'app\project_builder.py'='cfff41021b3e46fcc3708392055fd046980b2ac34e1ff0e482ca3f369f207dfb'
+            'app\visual_builder.py'='695b0fa3098ddffae22a46b60199f72e351fd3739420766344f99664461f156c'
+            'assets\branding\brand.jpg'='93a9b657dad930ecdd4c1ff328254447fcc5aeb4884a067460a239a5de473d66'
+            'create_setup.iss'='314d34a251351f17209c83920616ef9cf81c9aa67893aae8ea948ea8b7c4b088'
+            'requirements.txt'='940ff127008e8eb5abedb5281d0e2877259dbdb98ed3391d697b0b136fcee4f9'
+          }
+          foreach ($rel in $expected.Keys) {
+            $p = Join-Path $root $rel
+            if (-not (Test-Path $p)) { throw "Missing source file: $rel" }
+            $actual = (Get-FileHash $p -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $expected[$rel]) { throw "Source file hash mismatch: $rel => $actual" }
+          }
           "APP_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Setup Python
