@@ -1,0 +1,155 @@
+name: Final Android Logo APK v2
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-final:
+    if: github.head_ref == 'build/android5plus-iconfix-v106'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract source
+        run: |
+          set -euo pipefail
+          rm -rf android-native && mkdir android-native
+          unzip -q android5plus-source.zip -d android-native
+
+      - name: Apply root fix
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow
+          APP=android-native/app/src/main
+          PKG=$APP/java/com/waraqawqalam/store
+          find "$APP/res" -type f \( -name 'ic_launcher*' -o -name 'ic_store*' -o -name 'ic_splash_logo*' \) -delete || true
+          mkdir -p "$APP/res/mipmap-mdpi" "$APP/res/mipmap-hdpi" "$APP/res/mipmap-xhdpi" "$APP/res/mipmap-xxhdpi" "$APP/res/mipmap-xxxhdpi" "$APP/res/mipmap-anydpi-v26" "$APP/res/drawable" "$APP/res/drawable-xxxhdpi" "$APP/res/values" "$APP/res/values-v31"
+
+          python3 - <<'PY'
+          from PIL import Image,ImageDraw
+          from pathlib import Path
+          cands=[Path('resources/icon.png'),Path('www/assets/wara2a-qalam-logo.jpg'),Path('native-overrides/store_logo.jpg')]
+          src=None; chosen=None
+          for p in cands:
+              try:
+                  im=Image.open(p); im.verify(); im=Image.open(p).convert('RGBA')
+                  if im.width>=512 and im.height>=512:
+                      src=im; chosen=p; break
+              except Exception:
+                  pass
+          if src is None: raise SystemExit('No valid logo image')
+          Path('chosen-logo.txt').write_text(str(chosen),encoding='utf-8')
+          rgb=src.convert('RGB'); m=Image.new('L',src.size,0); mp=m.load(); px=rgb.load()
+          for y in range(src.height):
+              for x in range(src.width):
+                  if min(px[x,y])<245: mp[x,y]=255
+          box=m.getbbox()
+          if not box: raise SystemExit('Logo bounds missing')
+          l,t,r,b=box; pad=max(4,round(min(src.size)*.01)); l=max(0,l-pad); t=max(0,t-pad); r=min(src.width,r+pad); b=min(src.height,b+pad)
+          crop=src.crop((l,t,r,b)); side=max(crop.size)
+          art=Image.new('RGBA',(side,side),(0,0,0,0)); art.alpha_composite(crop,((side-crop.width)//2,(side-crop.height)//2))
+          a=Image.new('L',(side,side),0); ImageDraw.Draw(a).ellipse((0,0,side-1,side-1),fill=255); art.putalpha(a)
+          res=Path('android-native/app/src/main/res'); navy=(15,31,51,255)
+          legacy={'mdpi':48,'hdpi':72,'xhdpi':96,'xxhdpi':144,'xxxhdpi':192}
+          adaptive={'mdpi':108,'hdpi':162,'xhdpi':216,'xxhdpi':324,'xxxhdpi':432}
+          for d,s in legacy.items():
+              out=res/f'mipmap-{d}'; icon=Image.new('RGBA',(s,s),(0,0,0,0)); ImageDraw.Draw(icon).ellipse((0,0,s-1,s-1),fill=navy)
+              n=round(s*.90); z=art.resize((n,n),Image.Resampling.LANCZOS); icon.alpha_composite(z,((s-n)//2,(s-n)//2)); icon.save(out/'ic_launcher.png'); icon.save(out/'ic_launcher_round.png')
+          for d,s in adaptive.items():
+              out=res/f'mipmap-{d}'; fg=Image.new('RGBA',(s,s),(0,0,0,0)); n=round(s*.69); z=art.resize((n,n),Image.Resampling.LANCZOS); fg.alpha_composite(z,((s-n)//2,(s-n)//2)); fg.save(out/'ic_launcher_foreground.png')
+          art.resize((720,720),Image.Resampling.LANCZOS).save(res/'drawable-xxxhdpi/splash_logo.png')
+          PY
+
+          cat > "$APP/res/mipmap-anydpi-v26/ic_launcher.xml" <<'XML'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="@color/icon_background"/><foreground android:drawable="@mipmap/ic_launcher_foreground"/></adaptive-icon>
+          XML
+          cp "$APP/res/mipmap-anydpi-v26/ic_launcher.xml" "$APP/res/mipmap-anydpi-v26/ic_launcher_round.xml"
+          cat > "$APP/res/values/icon_colors.xml" <<'XML'
+          <resources><color name="icon_background">#0F1F33</color></resources>
+          XML
+          cat > "$APP/res/drawable/splash_window.xml" <<'XML'
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android"><item android:drawable="@color/navy"/><item android:gravity="center"><bitmap android:src="@drawable/splash_logo" android:gravity="center"/></item></layer-list>
+          XML
+          cat > "$APP/res/values/splash_styles.xml" <<'XML'
+          <resources><style name="Theme.WaraqaWaQalam.Splash" parent="android:style/Theme.Material.Light.NoActionBar"><item name="android:windowBackground">@drawable/splash_window</item><item name="android:statusBarColor">@color/navy</item><item name="android:navigationBarColor">@color/navy</item><item name="android:windowLightStatusBar">false</item></style></resources>
+          XML
+          cat > "$APP/res/values-v31/styles.xml" <<'XML'
+          <resources><style name="Theme.WaraqaWaQalam" parent="android:style/Theme.Material.Light.NoActionBar"><item name="android:fontFamily">sans</item><item name="android:windowLightStatusBar">false</item><item name="android:statusBarColor">@color/navy</item><item name="android:navigationBarColor">@color/white</item><item name="android:windowBackground">@color/paper</item><item name="android:windowActionModeOverlay">true</item></style></resources>
+          XML
+          cat > "$APP/res/values-v31/splash_styles.xml" <<'XML'
+          <resources><style name="Theme.WaraqaWaQalam.Splash" parent="android:style/Theme.Material.Light.NoActionBar"><item name="android:windowBackground">@color/navy</item><item name="android:windowSplashScreenBackground">@color/navy</item><item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item><item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item><item name="android:windowSplashScreenAnimationDuration">150</item><item name="android:statusBarColor">@color/navy</item><item name="android:navigationBarColor">@color/navy</item><item name="android:windowLightStatusBar">false</item></style></resources>
+          XML
+
+          cat > "$PKG/SplashActivity.java" <<'JAVA'
+          package com.waraqawqalam.store;
+          import android.app.Activity; import android.content.Intent; import android.graphics.Color; import android.net.Uri; import android.os.Bundle; import android.view.Gravity; import android.view.animation.AccelerateDecelerateInterpolator; import android.widget.FrameLayout; import android.widget.ImageView;
+          public class SplashActivity extends Activity {
+            private boolean opened;
+            protected void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(Color.rgb(15,31,51));getWindow().setNavigationBarColor(Color.rgb(15,31,51));FrameLayout r=new FrameLayout(this);r.setBackgroundColor(Color.rgb(15,31,51));ImageView l=new ImageView(this);l.setImageResource(R.drawable.splash_logo);l.setScaleType(ImageView.ScaleType.FIT_CENTER);l.setScaleX(.62f);l.setScaleY(.62f);l.setAlpha(.88f);int s=dp(230);r.addView(l,new FrameLayout.LayoutParams(s,s,Gravity.CENTER));setContentView(r);l.animate().scaleX(1f).scaleY(1f).alpha(1f).setInterpolator(new AccelerateDecelerateInterpolator()).setDuration(720).withEndAction(this::openStore).start();}
+            private void openStore(){if(opened)return;opened=true;Intent n=new Intent(this,MainActivity.class);Uri d=getIntent().getData();if(d!=null)n.setData(d);startActivity(n);overridePendingTransition(android.R.anim.fade_in,android.R.anim.fade_out);finish();}
+            private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+          }
+          JAVA
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,xml.etree.ElementTree as ET
+          app=Path('android-native/app/src/main'); main=app/'java/com/waraqawqalam/store/MainActivity.java'
+          s=main.read_text(encoding='utf-8')
+          if 'splashLayer = makeAnimatedSplash();' in s:
+              s=s.replace('        splashLayer = makeAnimatedSplash();','        splashLayer = null;',1)
+              s=re.sub(r'\n\s*root\.addView\(splashLayer,\s*new FrameLayout\.LayoutParams\([\s\S]*?\)\);','',s,count=1)
+              s=s.replace('        startSplashAnimation();','',1)
+              main.write_text(s,encoding='utf-8')
+          p=app/'AndroidManifest.xml'; ET.register_namespace('android','http://schemas.android.com/apk/res/android'); ns='{http://schemas.android.com/apk/res/android}'
+          tree=ET.parse(p); root=tree.getroot(); application=root.find('application'); application.set(ns+'icon','@mipmap/ic_launcher'); application.set(ns+'roundIcon','@mipmap/ic_launcher_round')
+          for alias in list(application.findall('activity-alias')): application.remove(alias)
+          for act in list(application.findall('activity')):
+              name=act.get(ns+'name','')
+              if name=='.SplashActivity' or name.startswith('.LauncherV') or name.startswith('com.waraqawqalam.store.LauncherV'): application.remove(act)
+          main_act=next((a for a in application.findall('activity') if a.get(ns+'name') in ('.MainActivity','com.waraqawqalam.store.MainActivity')),None)
+          if main_act is None: raise SystemExit('MainActivity missing')
+          for f in list(main_act.findall('intent-filter')): main_act.remove(f)
+          sp=ET.Element('activity'); sp.set(ns+'name','.SplashActivity'); sp.set(ns+'exported','true'); sp.set(ns+'theme','@style/Theme.WaraqaWaQalam.Splash'); sp.set(ns+'icon','@mipmap/ic_launcher'); sp.set(ns+'roundIcon','@mipmap/ic_launcher_round'); sp.set(ns+'label','@string/app_name')
+          f=ET.SubElement(sp,'intent-filter'); a=ET.SubElement(f,'action'); a.set(ns+'name','android.intent.action.MAIN'); c=ET.SubElement(f,'category'); c.set(ns+'name','android.intent.category.LAUNCHER')
+          f=ET.SubElement(sp,'intent-filter'); f.set(ns+'autoVerify','true'); a=ET.SubElement(f,'action'); a.set(ns+'name','android.intent.action.VIEW'); c=ET.SubElement(f,'category'); c.set(ns+'name','android.intent.category.DEFAULT'); c=ET.SubElement(f,'category'); c.set(ns+'name','android.intent.category.BROWSABLE'); d=ET.SubElement(f,'data'); d.set(ns+'scheme','https'); d.set(ns+'host','waraqawqalam.com')
+          application.insert(0,sp); tree.write(p,encoding='utf-8',xml_declaration=True)
+          g=Path('android-native/app/build.gradle.kts'); txt=g.read_text(encoding='utf-8'); txt=re.sub(r'versionCode\s*=\s*\d+','versionCode = 12',txt,count=1); txt=re.sub(r'versionName\s*=\s*"[^"]+"','versionName = "1.0.11"',txt,count=1); g.write_text(txt,encoding='utf-8')
+          PY
+
+          test ! -e "$APP/res/mipmap/ic_launcher.xml"
+          test ! -e "$APP/res/drawable/ic_launcher_foreground.xml"
+          test -e "$APP/res/mipmap-anydpi-v26/ic_launcher.xml"
+          test -e "$PKG/SplashActivity.java"
+
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '9.4.1'}
+      - name: Build release
+        working-directory: android-native
+        run: gradle :app:assembleRelease --stacktrace
+      - name: Verify final APK
+        run: |
+          set -euo pipefail
+          APK=android-native/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          unzip -l "$APK" | grep -E 'mipmap-anydpi-v26.*ic_launcher.xml'
+          unzip -l "$APK" | grep -E 'mipmap-xxxhdpi.*ic_launcher_foreground.png'
+          unzip -l "$APK" | grep -E 'drawable-xxxhdpi.*splash_logo.png'
+          BADGING=$("$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "$APK")
+          echo "$BADGING" | grep "package: name='com.waraqawqalam.store' versionCode='12' versionName='1.0.11'"
+          echo "$BADGING" | grep "launchable-activity: name='com.waraqawqalam.store.SplashActivity'"
+          if unzip -l "$APK" | grep -E 'ic_splash_logo.xml|res/mipmap-v4/ic_launcher.xml|res/drawable/ic_launcher_foreground.xml'; then exit 1; fi
+          printf 'logo=%s\nversion=1.0.11 (12)\nlauncher=SplashActivity\nanimation=0.62->1.00 in 720ms\nadaptive_icon=yes\nold_placeholder_resources=no\n' "$(cat chosen-logo.txt)" > final-validation.txt
+          cat final-validation.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WaraqaWaQalam-v1.0.11-FINAL
+          path: |
+            android-native/app/build/outputs/apk/release/app-release-unsigned.apk
+            final-validation.txt
+          if-no-files-found: error
