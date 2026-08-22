@@ -51,11 +51,6 @@ jobs:
           sed -i 's/s.setJavaScriptEnabled(true);/s.setJavaScriptEnabled(true);s.setCacheMode(WebSettings.LOAD_NO_CACHE);s.setBlockNetworkImage(false);/' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
           sed -i 's/WebSettings.MIXED_CONTENT_NEVER_ALLOW/WebSettings.MIXED_CONTENT_ALWAYS_ALLOW/g' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
 
-          echo '--- adaptive icon source ---'
-          cat android-native/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-          echo '--- manifest icon refs ---'
-          grep -n 'android:icon\|android:roundIcon\|usesCleartextTraffic' android-native/app/src/main/AndroidManifest.xml
-
       - name: Fix Android SSL import
         run: sed -i 's/import android.webkit.SslError;/import android.net.http.SslError;/' android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
 
@@ -70,6 +65,21 @@ jobs:
 
       - name: Install Android 36 SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Export apksigner tool
+        run: |
+          mkdir -p apksigner-tool/lib
+          cp "$ANDROID_HOME/build-tools/36.0.0/apksigner" apksigner-tool/apksigner
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" apksigner-tool/lib/apksigner.jar
+          chmod +x apksigner-tool/apksigner
+          ./apksigner-tool/apksigner version
+
+      - name: Upload apksigner tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-apksigner-36-v107
+          path: apksigner-tool
+          if-no-files-found: error
 
       - name: Set up Gradle 9.4.1
         uses: gradle/actions/setup-gradle@v4
