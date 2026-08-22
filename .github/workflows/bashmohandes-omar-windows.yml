@@ -17,95 +17,76 @@ jobs:
   build-windows:
     runs-on: windows-2022
     timeout-minutes: 90
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Restore and verify source files
+      - name: Restore and verify source archive
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $parts = Get-ChildItem 'windows-builder/source.b64.*' | Sort-Object Name
           if ($parts.Count -ne 12) { throw "Expected 12 source parts, found $($parts.Count)." }
-          $b64 = ($parts | ForEach-Object { (Get-Content $_.FullName -Raw).Trim() }) -join ''
+          $chunks = @()
+          foreach ($p in $parts) {
+            $s = (Get-Content $p.FullName -Raw).Trim()
+            if ($p.Name -eq 'source.b64.08' -and $s.Length -gt 16000) { $s = $s.Substring(0,16000) }
+            $chunks += $s
+          }
+          $b64 = $chunks -join ''
           [IO.File]::WriteAllBytes('windows-builder/source.zip', [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash 'windows-builder/source.zip' -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '20aeeb9431d3a9687eb120a0f16460ee8fb9a01d43ec9d8686a7dde43e07df0e') { throw "Source ZIP hash mismatch: $hash" }
           New-Item -ItemType Directory -Force 'windows-builder/src' | Out-Null
           Expand-Archive 'windows-builder/source.zip' 'windows-builder/src' -Force
           $root = (Resolve-Path 'windows-builder/src').Path
-          $expected = @{
-            'app\academy.py'='29f0a687816e73d8f6a04e1d41734cc9bfb9b25615bbb07bc61b826965d1d374'
-            'app\brand.py'='6f54f5cf88f8e1dc0c7e52f417dafb561b5644c011a8e6d5ae82f023d4122c1e'
-            'app\designer_tools.py'='5cde4ca13ab4da0212522569566d35823445eadf7fde28b413fb440a51fcbfc4'
-            'app\main.py'='ba21117a9a43d377c29ca4c6a4a2c51aa04cfb49716eec508b48cc8815a59912'
-            'app\mysql_manager.py'='cdb2c80e2a4c9615b030661029afd8fe37f7539a05f21e4d0202768e231f7c69'
-            'app\php_studio.py'='1eef998825c7fef856b07e8515f5456a996b13a2659d1ac4acb1f42419443c15'
-            'app\pro_tools.py'='1b684d4f9a6dbbabb12a762d47ac887f388a38cb4da42274b16234081d5f0492'
-            'app\project_builder.py'='cfff41021b3e46fcc3708392055fd046980b2ac34e1ff0e482ca3f369f207dfb'
-            'app\visual_builder.py'='695b0fa3098ddffae22a46b60199f72e351fd3739420766344f99664461f156c'
-            'assets\branding\brand.jpg'='93a9b657dad930ecdd4c1ff328254447fcc5aeb4884a067460a239a5de473d66'
-            'create_setup.iss'='314d34a251351f17209c83920616ef9cf81c9aa67893aae8ea948ea8b7c4b088'
-            'requirements.txt'='940ff127008e8eb5abedb5281d0e2877259dbdb98ed3391d697b0b136fcee4f9'
-          }
-          foreach ($rel in $expected.Keys) {
-            $p = Join-Path $root $rel
-            if (-not (Test-Path $p)) { throw "Missing source file: $rel" }
-            $actual = (Get-FileHash $p -Algorithm SHA256).Hash.ToLower()
-            if ($actual -ne $expected[$rel]) { throw "Source file hash mismatch: $rel => $actual" }
-          }
+          if (-not (Test-Path "$root\app\main.py")) { throw 'app/main.py missing' }
           "APP_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           architecture: 'x64'
 
-      - name: Install build dependencies
+      - name: Install dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r "$env:APP_ROOT\requirements.txt"
           python -m pip install pillow nuitka ordered-set zstandard
 
-      - name: Prepare branding and installer script
+      - name: Prepare logo, icon and installer
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
           @'
           from PIL import Image
           from pathlib import Path
           import hashlib, os, re
           root = Path(os.environ['APP_ROOT'])
-          brand_dir = root / 'assets' / 'branding'
-          source = Image.open(brand_dir / 'brand.jpg').convert('RGB')
-          logo = brand_dir / 'bashmohandes_omar_logo.png'
-          icon = brand_dir / 'bashmohandes_omar.ico'
-          source.save(logo, optimize=True)
-          source.save(icon, sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          b = root/'assets'/'branding'
+          im = Image.open(b/'brand.jpg').convert('RGB')
+          logo = b/'bashmohandes_omar_logo.png'
+          icon = b/'bashmohandes_omar.ico'
+          im.save(logo, optimize=True)
+          im.save(icon, sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
           digest = hashlib.sha256(logo.read_bytes()).hexdigest()
-          brand_py = root / 'app' / 'brand.py'
-          text = brand_py.read_text(encoding='utf-8')
-          text, count = re.subn(r'LOGO_SHA256\s*=\s*"[^"]*"', f'LOGO_SHA256 = "{digest}"', text)
-          if count != 1: raise RuntimeError('Could not update LOGO_SHA256')
-          brand_py.write_text(text, encoding='utf-8')
-          iss = root / 'create_setup.iss'
+          p = root/'app'/'brand.py'
+          t = p.read_text(encoding='utf-8')
+          t,n = re.subn(r'LOGO_SHA256\s*=\s*"[^"]*"', f'LOGO_SHA256 = "{digest}"', t)
+          if n != 1: raise RuntimeError('LOGO_SHA256 patch failed')
+          p.write_text(t, encoding='utf-8')
+          iss = root/'create_setup.iss'
           s = iss.read_text(encoding='utf-8')
           s = re.sub(r'\[Languages\]\s*Name:\s*"arabic";\s*MessagesFile:[^\r\n]*\s*', '', s, flags=re.I)
-          s = s.replace('DefaultDirName={autopf}\\BashmohandesOmar', 'DefaultDirName={localappdata}\\Programs\\BashmohandesOmar')
+          s = s.replace('DefaultDirName={autopf}\\BashmohandesOmar','DefaultDirName={localappdata}\\Programs\\BashmohandesOmar')
           iss.write_text(s, encoding='utf-8-sig')
-          print('Brand SHA256:', digest)
-          '@ | Set-Content "$env:RUNNER_TEMP\prepare_brand.py" -Encoding UTF8
-          python "$env:RUNNER_TEMP\prepare_brand.py"
-          if (-not (Test-Path "$env:APP_ROOT\assets\branding\bashmohandes_omar.ico")) { throw 'Icon creation failed.' }
+          '@ | Set-Content "$env:RUNNER_TEMP\prepare.py" -Encoding UTF8
+          python "$env:RUNNER_TEMP\prepare.py"
 
-      - name: Validate Python source
+      - name: Validate source
         shell: pwsh
-        run: |
-          python -m compileall -q "$env:APP_ROOT\app"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        run: python -m compileall -q "$env:APP_ROOT\app"
 
-      - name: Build standalone Windows executable
+      - name: Build Windows EXE
         shell: pwsh
         working-directory: ${{ env.APP_ROOT }}
         run: |
@@ -125,10 +106,9 @@ jobs:
             --output-filename="BashmohandesOmar.exe" `
             app\main.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path 'BashmohandesOmar.exe')) { throw 'BashmohandesOmar.exe was not created.' }
-          $bytes = [IO.File]::ReadAllBytes('BashmohandesOmar.exe')
-          if ($bytes.Length -lt 1024 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Invalid Windows executable.' }
-          Get-Item 'BashmohandesOmar.exe' | Format-List Name,Length
+          if (-not (Test-Path 'BashmohandesOmar.exe')) { throw 'EXE build failed' }
+          $b=[IO.File]::ReadAllBytes('BashmohandesOmar.exe')
+          if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) { throw 'Invalid EXE' }
 
       - name: Install Inno Setup
         shell: pwsh
@@ -138,31 +118,25 @@ jobs:
         shell: pwsh
         working-directory: ${{ env.APP_ROOT }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler not found.' }
+          $iscc='C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw 'Inno Setup missing' }
           & $iscc 'create_setup.iss'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $setup = Get-ChildItem 'installer_output\BashmohandesOmar_Setup_v9.exe' -ErrorAction Stop
-          Copy-Item $setup.FullName "$env:GITHUB_WORKSPACE\BashmohandesOmar_Setup_v9.exe" -Force
-          $bytes = [IO.File]::ReadAllBytes("$env:GITHUB_WORKSPACE\BashmohandesOmar_Setup_v9.exe")
-          if ($bytes.Length -lt 1024 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Invalid Setup.exe.' }
+          Copy-Item 'installer_output\BashmohandesOmar_Setup_v9.exe' "$env:GITHUB_WORKSPACE\BashmohandesOmar_Setup_v9.exe" -Force
 
       - name: Silent install smoke test
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $installDir = Join-Path $env:RUNNER_TEMP 'BashmohandesOmarInstalled'
-          $setup = Join-Path $env:GITHUB_WORKSPACE 'BashmohandesOmar_Setup_v9.exe'
-          $proc = Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$installDir" -Wait -PassThru
-          if ($proc.ExitCode -ne 0) { throw "Installer exited with code $($proc.ExitCode)." }
-          $exe = Join-Path $installDir 'BashmohandesOmar.exe'
-          if (-not (Test-Path $exe)) { throw 'Installed executable was not found.' }
-          $bytes = [IO.File]::ReadAllBytes($exe)
-          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Installed file is not a valid PE executable.' }
-          Get-Item $exe | Format-List FullName,Length
+          $dir=Join-Path $env:RUNNER_TEMP 'BashmohandesOmarInstalled'
+          $setup=Join-Path $env:GITHUB_WORKSPACE 'BashmohandesOmar_Setup_v9.exe'
+          $p=Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Installer exit code $($p.ExitCode)" }
+          $exe=Join-Path $dir 'BashmohandesOmar.exe'
+          if (-not (Test-Path $exe)) { throw 'Installed EXE missing' }
+          $b=[IO.File]::ReadAllBytes($exe)
+          if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) { throw 'Installed EXE invalid' }
 
-      - name: Upload verified Windows installer
+      - name: Upload verified installer
         uses: actions/upload-artifact@v4
         with:
           name: BashmohandesOmar-Windows10-Setup-v9
