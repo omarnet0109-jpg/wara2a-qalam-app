@@ -1,1 +1,1 @@
-Trigger Android 5+ live-sync build v1.0.3 with exported apksigner for permanent signing.
+Trigger Android 5+ v1.0.4 build: fixed product images, real launcher logo, animated splash, live web sync.
