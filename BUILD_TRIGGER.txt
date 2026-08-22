@@ -1,1 +1,1 @@
-Trigger Android 5+ v1.0.8 root fix: direct real store logo as app icon, no legacy/adaptive fallback resources, dedicated SplashActivity before the store.
+Trigger Android 5+ v1.0.9: new LauncherV109 component with explicit Waraqa Wa Qalam logo, dedicated SplashActivity first, same package/data and live web sync.
