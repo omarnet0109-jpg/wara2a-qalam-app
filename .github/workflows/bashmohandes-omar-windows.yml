@@ -1,0 +1,73 @@
+name: Build Bashmohandes Omar Windows Setup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [bashmohandes-omar-windows-build]
+    paths:
+      - 'windows-builder/**'
+      - '.github/workflows/bashmohandes-omar-windows.yml'
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore source archive
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem 'windows-builder/source.b64.*' | Sort-Object Name
+          if (-not $parts) { throw 'Source archive parts were not found.' }
+          $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          [IO.File]::WriteAllBytes('windows-builder/source.zip',[Convert]::FromBase64String($b64))
+          Expand-Archive 'windows-builder/source.zip' 'windows-builder/src' -Force
+          $root = Get-ChildItem 'windows-builder/src' -Directory | Select-Object -First 1
+          if (-not $root) { throw 'Source root not found after extraction.' }
+          "APP_ROOT=$($root.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r "$env:APP_ROOT\requirements.txt"
+          python -m pip install nuitka ordered-set zstandard
+
+      - name: Build standalone EXE
+        shell: pwsh
+        working-directory: ${{ env.APP_ROOT }}
+        run: |
+          python -m nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyside6 --include-data-dir=assets=assets --windows-icon-from-ico="assets\branding\bashmohandes_omar.ico" --product-name="الباشمهندس عمر" --file-description="استوديو المواقع الاحترافي" --product-version=9.0.0.0 --file-version=9.0.0.0 --copyright="جميع الحقوق محفوظة - الباشمهندس عمر - 01158022519" --output-filename="BashmohandesOmar.exe" app\main.py
+          if (-not (Test-Path 'BashmohandesOmar.exe')) { throw 'EXE build failed.' }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build Setup.exe
+        shell: pwsh
+        working-directory: ${{ env.APP_ROOT }}
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler not found.' }
+          & $iscc 'create_setup.iss'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $setup = Get-ChildItem 'installer_output\*.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'Setup.exe was not created.' }
+          Copy-Item $setup.FullName "$env:GITHUB_WORKSPACE\BashmohandesOmar_Setup_v9.exe"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BashmohandesOmar-Windows10-Setup-v9
+          path: BashmohandesOmar_Setup_v9.exe
+          if-no-files-found: error
+          retention-days: 30
