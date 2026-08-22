@@ -1,21 +1,22 @@
-name: Build Bashmohandes Omar Windows Setup
+name: Build Bashmohandes Omar Windows Final
 
 on:
   workflow_dispatch:
-  pull_request:
+  push:
     branches: [main]
     paths:
-      - 'windows-builder/**'
+      - 'windows-builder/final_patch.b64.*'
       - '.github/workflows/bashmohandes-omar-windows.yml'
 
 jobs:
-  build-windows:
+  build-windows-final:
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -38,7 +39,7 @@ jobs:
                   except subprocess.CalledProcessError: continue
                   if v not in vals: vals.append(v)
               if not vals: raise RuntimeError('Missing history for '+path)
-              print(path,[len(v) for v in vals]); versions.append(vals)
+              versions.append(vals)
           found=None
           for combo in itertools.product(*versions):
               parts=list(combo)
@@ -58,47 +59,84 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Expand-Archive 'windows-builder/source.zip' 'windows-builder/src' -Force
           $root=(Resolve-Path 'windows-builder/src').Path
-          if (-not (Test-Path "$root\app\main.py")) { throw 'main.py missing' }
           "APP_ROOT=$root" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Install build dependencies
+      - name: Apply final verified patch
+        shell: pwsh
+        run: |
+          @'
+          import base64,hashlib,pathlib,zipfile
+          repo=pathlib.Path.cwd()
+          parts=sorted(repo.glob('windows-builder/final_patch.b64.*'))
+          if not parts: raise RuntimeError('Final patch payload missing')
+          text=''.join(p.read_text(encoding='utf-8').strip() for p in parts)
+          raw=base64.b64decode(text,validate=True)
+          digest=hashlib.sha256(raw).hexdigest()
+          print('PATCH_SHA256',digest,'SIZE',len(raw))
+          if digest!='c793507ff503cbd0a906a4f7cb7dc0fb182b055d786965b03a19a83c7e23c362':
+              raise RuntimeError('Final patch hash mismatch')
+          z=repo/'windows-builder'/'final_patch.zip'; z.write_bytes(raw)
+          with zipfile.ZipFile(z) as f:
+              bad=f.testzip()
+              if bad: raise RuntimeError('Corrupt patch member: '+bad)
+              f.extractall(repo/'windows-builder'/'src')
+          '@ | Set-Content "$env:RUNNER_TEMP\patch.py" -Encoding UTF8
+          python "$env:RUNNER_TEMP\patch.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install source dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r "$env:APP_ROOT\requirements.txt"
           python -m pip install pillow nuitka ordered-set zstandard
 
-      - name: Prepare branding and installer
-        shell: pwsh
-        run: |
-          @'
-          from PIL import Image
-          from pathlib import Path
-          import hashlib,os,re
-          root=Path(os.environ['APP_ROOT']); b=root/'assets'/'branding'
-          im=Image.open(b/'brand.jpg').convert('RGB')
-          logo=b/'bashmohandes_omar_logo.png'; icon=b/'bashmohandes_omar.ico'
-          im.save(logo,optimize=True); im.save(icon,sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
-          digest=hashlib.sha256(logo.read_bytes()).hexdigest()
-          p=root/'app'/'brand.py'; t=p.read_text(encoding='utf-8')
-          t,n=re.subn(r'LOGO_SHA256\s*=\s*"[^"]*"',f'LOGO_SHA256 = "{digest}"',t)
-          if n!=1: raise RuntimeError('branding patch failed')
-          p.write_text(t,encoding='utf-8')
-          iss=root/'create_setup.iss'; s=iss.read_text(encoding='utf-8')
-          s=re.sub(r'\[Languages\]\s*Name:\s*"arabic";\s*MessagesFile:[^\r\n]*\s*','',s,flags=re.I)
-          s=s.replace('DefaultDirName={autopf}\\BashmohandesOmar','DefaultDirName={localappdata}\\Programs\\BashmohandesOmar')
-          iss.write_text(s,encoding='utf-8-sig')
-          '@ | Set-Content "$env:RUNNER_TEMP\prepare.py" -Encoding UTF8
-          python "$env:RUNNER_TEMP\prepare.py"
-          python -m compileall -q "$env:APP_ROOT\app"
-
-      - name: Build Windows EXE
+      - name: Validate source and branding
         shell: pwsh
         working-directory: ${{ env.APP_ROOT }}
         run: |
-          python -m nuitka --assume-yes-for-downloads --standalone --onefile --windows-console-mode=disable --enable-plugin=pyside6 --include-data-dir=assets=assets --windows-icon-from-ico="assets\branding\bashmohandes_omar.ico" --product-name="الباشمهندس عمر" --file-description="استوديو المواقع الاحترافي" --product-version=9.0.0.0 --file-version=9.0.0.0 --copyright="جميع الحقوق محفوظة - الباشمهندس عمر - 01158022519" --output-filename="BashmohandesOmar.exe" app\main.py
+          python -m compileall -q app
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path 'BashmohandesOmar.exe')) { throw 'EXE build failed' }
+          python -c "import sys;sys.path.insert(0,'app');import brand;assert brand.verify_brand();assert brand.verify_brand_assets('.');print('SOURCE_BRAND_OK',brand.VERSION)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Source runtime smoke test
+        shell: pwsh
+        working-directory: ${{ env.APP_ROOT }}
+        run: |
+          $marker=Join-Path $env:RUNNER_TEMP 'source-runtime-ok.txt'
+          $env:OMAR_SMOKE_MARKER=$marker
+          $env:QTWEBENGINE_CHROMIUM_FLAGS='--disable-gpu --no-sandbox'
+          $env:QTWEBENGINE_DISABLE_SANDBOX='1'
+          $p=Start-Process python -ArgumentList 'app\main.py','--runtime-smoke-test' -PassThru
+          if (-not $p.WaitForExit(30000)) { Stop-Process -Id $p.Id -Force; throw 'Source runtime smoke timed out' }
+          if ($p.ExitCode -ne 0) { throw "Source runtime exit code $($p.ExitCode)" }
+          if (-not (Test-Path $marker)) { throw 'Source runtime marker missing' }
+          Write-Host 'SOURCE_RUNTIME_OK'
+
+      - name: Build standalone Windows EXE
+        shell: pwsh
+        working-directory: ${{ env.APP_ROOT }}
+        run: |
+          python -m nuitka --assume-yes-for-downloads --onefile --windows-console-mode=disable --enable-plugin=pyside6 --include-data-dir=assets=assets --windows-icon-from-ico="assets\branding\bashmohandes_omar.ico" --product-name="الباشمهندس عمر" --file-description="استوديو تصميم وبرمجة المواقع" --product-version=9.1.0.0 --file-version=9.1.0.0 --copyright="جميع الحقوق محفوظة - الباشمهندس عمر - 01158022519" --output-dir=build_output --output-filename="BashmohandesOmar.exe" app\main.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe='build_output\BashmohandesOmar.exe'
+          if (-not (Test-Path $exe)) { throw 'EXE missing' }
+          $b=[IO.File]::ReadAllBytes($exe); if ($b[0]-ne 0x4D -or $b[1]-ne 0x5A) { throw 'Invalid EXE' }
+
+      - name: EXE runtime smoke test
+        shell: pwsh
+        working-directory: ${{ env.APP_ROOT }}
+        run: |
+          $marker=Join-Path $env:RUNNER_TEMP 'exe-runtime-ok.txt'
+          $env:OMAR_SMOKE_MARKER=$marker
+          $env:QTWEBENGINE_CHROMIUM_FLAGS='--disable-gpu --no-sandbox'
+          $env:QTWEBENGINE_DISABLE_SANDBOX='1'
+          $p=Start-Process '.\build_output\BashmohandesOmar.exe' -ArgumentList '--runtime-smoke-test' -PassThru
+          if (-not $p.WaitForExit(45000)) { Stop-Process -Id $p.Id -Force; throw 'EXE runtime smoke timed out' }
+          if ($p.ExitCode -ne 0) { throw "EXE runtime exit code $($p.ExitCode)" }
+          if (-not (Test-Path $marker)) { throw 'EXE runtime marker missing' }
+          Write-Host 'EXE_RUNTIME_OK'
 
       - name: Build Setup EXE
         shell: pwsh
@@ -106,30 +144,63 @@ jobs:
         run: |
           choco install innosetup --no-progress -y
           $iscc='C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path $iscc)) { throw 'Inno Setup missing' }
           & $iscc 'create_setup.iss'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $built='installer_output\BashmohandesOmar_Setup_v9.exe'
-          if (-not (Test-Path $built)) { throw 'Setup EXE missing' }
-          Copy-Item $built "$env:GITHUB_WORKSPACE\BashmohandesOmar_Setup_v9.exe" -Force
+          if (-not (Test-Path 'installer_output\Program-Setup-Final.exe')) { throw 'Setup missing' }
+          Copy-Item 'installer_output\Program-Setup-Final.exe' "$env:GITHUB_WORKSPACE\Program-Setup-Final.exe" -Force
 
-      - name: Silent install smoke test
+      - name: Installer install run shortcuts uninstall test
         shell: pwsh
         run: |
           $dir=Join-Path $env:RUNNER_TEMP 'BashmohandesOmarInstalled'
-          $setup=Join-Path $env:GITHUB_WORKSPACE 'BashmohandesOmar_Setup_v9.exe'
-          $p=Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir" -Wait -PassThru
+          $setup=Join-Path $env:GITHUB_WORKSPACE 'Program-Setup-Final.exe'
+          $p=Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir",'/TASKS=desktopicon' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Installer exit code $($p.ExitCode)" }
           $exe=Join-Path $dir 'BashmohandesOmar.exe'
           if (-not (Test-Path $exe)) { throw 'Installed EXE missing' }
-          $b=[IO.File]::ReadAllBytes($exe)
-          if ($b[0]-ne 0x4D -or $b[1]-ne 0x5A) { throw 'Installed EXE invalid' }
-          Write-Host 'WINDOWS_INSTALLER_VERIFIED'
+          $marker=Join-Path $env:RUNNER_TEMP 'installed-runtime-ok.txt'
+          $env:OMAR_SMOKE_MARKER=$marker
+          $env:QTWEBENGINE_CHROMIUM_FLAGS='--disable-gpu --no-sandbox'
+          $env:QTWEBENGINE_DISABLE_SANDBOX='1'
+          $r=Start-Process $exe -ArgumentList '--runtime-smoke-test' -PassThru
+          if (-not $r.WaitForExit(45000)) { Stop-Process -Id $r.Id -Force; throw 'Installed EXE smoke timed out' }
+          if ($r.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Installed EXE runtime failed' }
+          $desktop=Join-Path ([Environment]::GetFolderPath('Desktop')) 'الباشمهندس عمر.lnk'
+          $start=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\الباشمهندس عمر.lnk'
+          if (-not (Test-Path $desktop)) { throw 'Desktop shortcut missing' }
+          if (-not (Test-Path $start)) { throw 'Start Menu shortcut missing' }
+          $uninst=Get-ChildItem $dir -Filter 'unins*.exe' | Select-Object -First 1
+          if (-not $uninst) { throw 'Uninstaller missing' }
+          $u=Start-Process $uninst.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "Uninstall exit code $($u.ExitCode)" }
+          Write-Host 'INSTALLER_FULL_TEST_OK'
 
-      - name: Upload verified installer
+      - name: Package source and portable
+        shell: pwsh
+        run: |
+          $sourceStage=Join-Path $env:RUNNER_TEMP 'Program-Source-Final'
+          New-Item -ItemType Directory -Force $sourceStage | Out-Null
+          Copy-Item "$env:APP_ROOT\*" $sourceStage -Recurse -Force
+          Remove-Item "$sourceStage\.venv","$sourceStage\build_output","$sourceStage\installer_output" -Recurse -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path "$sourceStage\*" -DestinationPath "$env:GITHUB_WORKSPACE\Program-Source-Final.zip" -Force
+          $portableStage=Join-Path $env:RUNNER_TEMP 'Program-Portable-Final'
+          New-Item -ItemType Directory -Force $portableStage | Out-Null
+          Copy-Item "$env:APP_ROOT\build_output\BashmohandesOmar.exe" "$portableStage\BashmohandesOmar.exe"
+          'نسخة Portable - شغّل BashmohandesOmar.exe مباشرة. Windows 10/11 x64.' | Set-Content "$portableStage\README.txt" -Encoding UTF8
+          Compress-Archive -Path "$portableStage\*" -DestinationPath "$env:GITHUB_WORKSPACE\Program-Portable-Final.zip" -Force
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          foreach($z in 'Program-Source-Final.zip','Program-Portable-Final.zip') { $a=[IO.Compression.ZipFile]::OpenRead((Join-Path $env:GITHUB_WORKSPACE $z)); $a.Dispose() }
+          Get-FileHash "$env:GITHUB_WORKSPACE\Program-Source-Final.zip" -Algorithm SHA256
+          Get-FileHash "$env:GITHUB_WORKSPACE\Program-Setup-Final.exe" -Algorithm SHA256
+          Get-FileHash "$env:GITHUB_WORKSPACE\Program-Portable-Final.zip" -Algorithm SHA256
+
+      - name: Upload final release files
         uses: actions/upload-artifact@v4
         with:
-          name: BashmohandesOmar-Windows10-Setup-v9
-          path: BashmohandesOmar_Setup_v9.exe
+          name: BashmohandesOmar-Final-Windows-v9.1
+          path: |
+            Program-Source-Final.zip
+            Program-Setup-Final.exe
+            Program-Portable-Final.zip
           if-no-files-found: error
           retention-days: 30
