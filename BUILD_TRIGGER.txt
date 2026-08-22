@@ -1,1 +1,1 @@
-Trigger Android final v1.0.11: full adaptive launcher icon matrix + branded native splash + dedicated SplashActivity + release APK validation.
+Trigger Android final v1.0.11 build after complete launcher/splash root-cause fix and final workflow validation.
