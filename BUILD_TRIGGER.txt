@@ -1,1 +1,1 @@
-Trigger Android 5+ v1.0.6 build: real launcher mipmap resources on all densities, adaptive icon, animated splash, product image loading, live web sync.
+Trigger Android 5+ v1.0.7 definitive adaptive launcher icon fix using real Waraqa Wa Qalam logo.
