@@ -27,8 +27,9 @@ jobs:
           cp native-overrides/store_logo.jpg android-native/app/src/main/res/drawable-nodpi/store_logo.jpg
           cp native-overrides/pen_overlay.png android-native/app/src/main/res/drawable-nodpi/pen_overlay.png
           cp native-overrides/MainActivity.java android-native/app/src/main/java/com/waraqawqalam/store/MainActivity.java
-          sed -i 's/@mipmap\/ic_launcher/@drawable\/store_logo/g' android-native/app/src/main/AndroidManifest.xml
           sed -i 's/@mipmap\/ic_launcher_round/@drawable\/store_logo/g' android-native/app/src/main/AndroidManifest.xml
+          sed -i 's/@mipmap\/ic_launcher/@drawable\/store_logo/g' android-native/app/src/main/AndroidManifest.xml
+          sed -i 's/@drawable\/store_logo_round/@drawable\/store_logo/g' android-native/app/src/main/AndroidManifest.xml
           sed -i 's/versionCode = 2/versionCode = 3/' android-native/app/build.gradle.kts
           sed -i 's/versionName = "1.0.1"/versionName = "1.0.2"/' android-native/app/build.gradle.kts
           sed -i 's/@color\/navy/@color\/white/g' android-native/app/src/main/res/values-v31/styles.xml
