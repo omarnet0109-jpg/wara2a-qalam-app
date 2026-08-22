@@ -1,1 +1,1 @@
-Trigger Android 5+ animated splash APK validation build after round icon fix.
+Trigger Android 5+ live-sync build with fresh web content and animated splash.
