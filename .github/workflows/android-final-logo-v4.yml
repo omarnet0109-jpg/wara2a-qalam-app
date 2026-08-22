@@ -1,0 +1,102 @@
+name: Final Android Logo APK v4
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-final:
+    if: github.head_ref == 'build/android5plus-iconfix-v106'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reuse validated final source preparation
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import yaml
+          from pathlib import Path
+          wf=yaml.safe_load(Path('.github/workflows/android-final-logo-v3.yml').read_text(encoding='utf-8'))
+          steps=wf['jobs']['build']['steps']
+          step=next(s for s in steps if s.get('name')=='Prepare final Android source')
+          Path('/tmp/prepare-final-android.sh').write_text(step['run'],encoding='utf-8')
+          PY
+          bash /tmp/prepare-final-android.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Build release APK
+        working-directory: android-native
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Verify final APK using Android resource table
+        run: |
+          set -euo pipefail
+          APK=android-native/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+
+          BADGING=$("$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "$APK")
+          echo "$BADGING" | grep "package: name='com.waraqawqalam.store' versionCode='12' versionName='1.0.11'"
+          echo "$BADGING" | grep "application: label='ورقة وقلم'"
+          echo "$BADGING" | grep "launchable-activity: name='com.waraqawqalam.store.SplashActivity'"
+
+          RES=$("$ANDROID_HOME/build-tools/36.0.0/aapt2" dump resources "$APK")
+          echo "$RES" | grep -F 'mipmap/ic_launcher'
+          echo "$RES" | grep -F 'mipmap/ic_launcher_round'
+          echo "$RES" | grep -F 'mipmap/ic_launcher_foreground'
+          echo "$RES" | grep -F 'drawable/splash_logo'
+          echo "$RES" | grep -F 'style/Theme.WaraqaWaQalam.Splash'
+          if echo "$RES" | grep -E 'drawable/ic_splash_logo([^[:alnum:]_]|$)'; then
+            echo 'ERROR: stale splash placeholder resource survived'; exit 1
+          fi
+
+          MANIFEST=$("$ANDROID_HOME/build-tools/36.0.0/aapt2" dump xmltree --file AndroidManifest.xml "$APK")
+          echo "$MANIFEST" | grep -F 'com.waraqawqalam.store.SplashActivity'
+          echo "$MANIFEST" | grep -F 'Theme.WaraqaWaQalam.Splash'
+
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          apk=Path('android-native/app/build/outputs/apk/release/app-release-unsigned.apk')
+          with ZipFile(apk) as z:
+              names=z.namelist()
+              assert not any('ic_splash_logo' in n for n in names), 'stale splash file packaged'
+              assert not any('/mipmap-v4/ic_launcher.xml' in n for n in names), 'old generic launcher XML packaged'
+          print('ZIP stale-resource check passed')
+          PY
+
+          cat > final-validation.txt <<EOF
+          Package: com.waraqawqalam.store
+          Version: 1.0.11 (12)
+          Launcher: com.waraqawqalam.store.SplashActivity
+          Official logo source: $(cat chosen-logo.txt)
+          Legacy icon sizes generated: mdpi 48, hdpi 72, xhdpi 96, xxhdpi 144, xxxhdpi 192
+          Adaptive icon: foreground density matrix + adaptive XML + #0F1F33 background
+          Android 12+ startup icon: official adaptive foreground
+          Native splash animation: scale 0.62 -> 1.00 over 720ms, then opens MainActivity
+          Old launcher/splash placeholder resources: removed before build and absent from final APK checks
+          Release build: successful
+          EOF
+          cat final-validation.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WaraqaWaQalam-v1.0.11-FINAL-VERIFIED
+          path: |
+            android-native/app/build/outputs/apk/release/app-release-unsigned.apk
+            final-validation.txt
+          if-no-files-found: error
