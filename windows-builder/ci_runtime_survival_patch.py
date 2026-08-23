@@ -35,10 +35,6 @@ text, n2 = installed_pattern.subn(installed_replacement, text, count=1)
 if n2 != 1:
     raise SystemExit(f'Installed runtime block patch failed: {n2}')
 
-# Patch the generated source after the clean payload is extracted.  The previous
-# app_root() relied only on __file__, which can point at Nuitka's compiled module
-# location rather than the installed distribution root on some Windows systems.
-# Resolve the brand assets from the executable directory first, then source root.
 source_anchor = "Set-Location $root"
 source_patch = r'''Set-Location $root
 @'
@@ -47,7 +43,30 @@ import re
 p=Path('app/main.py')
 s=p.read_text(encoding='utf-8')
 pattern=re.compile(r"def app_root\(\) -> Path:\n(?:    .*\n)+?\n\ndef brand_asset", re.M)
-replacement='''def app_root() -> Path:\n    # Resolve resources reliably from source, Nuitka standalone, and installed builds.\n    candidates = []\n    try:\n        candidates.append(Path(sys.argv[0]).resolve().parent)\n    except Exception:\n        pass\n    try:\n        candidates.append(Path(sys.executable).resolve().parent)\n    except Exception:\n        pass\n    candidates.append(Path(__file__).resolve().parent.parent)\n    seen = set()\n    for candidate in candidates:\n        key = str(candidate).lower()\n        if key in seen:\n            continue\n        seen.add(key)\n        if (candidate / LOGO_RELATIVE_PATH).is_file() and (candidate / ICON_RELATIVE_PATH).is_file():\n            return candidate\n    return Path(__file__).resolve().parent.parent\n\n\ndef brand_asset'''
+replacement="""def app_root() -> Path:
+    # Resolve resources reliably from source, Nuitka standalone, and installed builds.
+    candidates = []
+    try:
+        candidates.append(Path(sys.argv[0]).resolve().parent)
+    except Exception:
+        pass
+    try:
+        candidates.append(Path(sys.executable).resolve().parent)
+    except Exception:
+        pass
+    candidates.append(Path(__file__).resolve().parent.parent)
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if (candidate / LOGO_RELATIVE_PATH).is_file() and (candidate / ICON_RELATIVE_PATH).is_file():
+            return candidate
+    return Path(__file__).resolve().parent.parent
+
+
+def brand_asset"""
 s,n=pattern.subn(replacement,s,count=1)
 if n != 1:
     raise RuntimeError(f'app_root patch failed: {n}')
