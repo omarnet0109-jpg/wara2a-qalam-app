@@ -78,6 +78,14 @@ if source_fix not in text:
         raise SystemExit('CI source patch anchor missing')
     text = text.replace(anchor, anchor + source_fix, 1)
 
+# GitHub-hosted Windows runners do not have an interactive desktop. Qt is
+# therefore exercised with the offscreen platform only during CI smoke tests.
+qt_anchor = "$env:QTWEBENGINE_CHROMIUM_FLAGS='--disable-gpu --no-sandbox';$env:QTWEBENGINE_DISABLE_SANDBOX='1'"
+qt_replacement = qt_anchor + ";$env:QT_QPA_PLATFORM='offscreen'"
+if qt_anchor not in text:
+    raise SystemExit('Qt smoke environment anchor missing')
+text = text.replace(qt_anchor, qt_replacement, 1)
+
 text = text.replace('WaitForExit(45000)', 'WaitForExit(90000)')
 text = text.replace('WaitForExit(180000)', 'WaitForExit(90000)')
 
@@ -117,3 +125,4 @@ ci.write_text(text, encoding='utf-8')
 print('CI_BRAND_STEP_PATCHED')
 print('CI_STANDALONE_PATCHED')
 print('CI_RUNTIME_MARKER_PATCHED')
+print('CI_OFFSCREEN_GUI_PATCHED')
