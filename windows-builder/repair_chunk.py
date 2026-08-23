@@ -47,5 +47,11 @@ if($LASTEXITCODE-ne 0){exit $LASTEXITCODE}
 python -c "import sys;sys.path.insert(0,'app');import brand;print('VERSION',brand.VERSION);assert brand.verify_brand();assert brand.verify_brand_assets('.');print('BRAND_OK')"'''
 if needle not in text:
     raise SystemExit('CI brand verification anchor missing')
-ci.write_text(text.replace(needle,replacement), encoding='utf-8')
+text = text.replace(needle, replacement)
+# Nuitka onefile must unpack QtWebEngine before Python starts. On clean Windows
+# runners this can legitimately take over 45 seconds, so the smoke test waits
+# up to 3 minutes while still requiring the runtime marker and clean exit.
+text = text.replace('WaitForExit(45000)', 'WaitForExit(180000)')
+ci.write_text(text, encoding='utf-8')
 print('CI_BRAND_STEP_PATCHED')
+print('CI_RUNTIME_TIMEOUT_PATCHED', text.count('WaitForExit(180000)'))
