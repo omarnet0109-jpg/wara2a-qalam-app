@@ -7,7 +7,7 @@ on:
 jobs:
   verify-windows-final:
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,6 +16,19 @@ jobs:
         with:
           python-version: '3.12'
           architecture: 'x64'
+      - name: Prepare clean final patch payload
+        shell: pwsh
+        run: |
+          python .\windows-builder\repair_chunk.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\windows-builder\ci_runtime_survival_patch.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item 'windows-builder/final_patch.b64.*' -Force -ErrorAction SilentlyContinue
+          $parts = Get-ChildItem 'windows-builder/final_clean.b64.*' | Sort-Object Name
+          if ($parts.Count -ne 6) { throw "Expected 6 clean patch parts, found $($parts.Count)" }
+          for ($i=0; $i -lt $parts.Count; $i++) {
+            Copy-Item $parts[$i].FullName ("windows-builder/final_patch.b64.{0}" -f $i) -Force
+          }
       - name: Build test package
         shell: pwsh
         run: .\windows-builder\final_ci.ps1
