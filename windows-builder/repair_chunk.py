@@ -49,14 +49,12 @@ if needle not in text:
     raise SystemExit('CI brand verification anchor missing')
 text = text.replace(needle, replacement)
 
-# Build as a standalone Windows app instead of onefile. This avoids a long
-# extraction pause before the splash screen and matches the Inno installer.
+# Build as a standalone Windows app so the splash appears immediately.
 text = text.replace('--onefile', '--standalone')
 text = text.replace("$exe=Join-Path $root 'build_output\\BashmohandesOmar.exe'", "$exe=Join-Path $root 'build_output\\main.dist\\BashmohandesOmar.exe'")
 text = text.replace("Copy-Item $exe \"$port\\BashmohandesOmar.exe\";'Windows 10/11 x64 Portable'|Set-Content \"$port\\README.txt\"", "Copy-Item (Join-Path $root 'build_output\\main.dist\\*') $port -Recurse -Force;'Windows 10/11 x64 Portable'|Set-Content \"$port\\README.txt\"")
 
-# Patch the source package's own Windows build files before they are tested
-# and later zipped for delivery.
+# Patch source build files before testing and before producing Source ZIP.
 anchor = "Set-Location $root\n"
 source_fix = r'''@'
 from pathlib import Path
@@ -80,9 +78,42 @@ if source_fix not in text:
         raise SystemExit('CI source patch anchor missing')
     text = text.replace(anchor, anchor + source_fix, 1)
 
-# Standalone startup should be quick, but retain a generous test timeout.
 text = text.replace('WaitForExit(45000)', 'WaitForExit(90000)')
 text = text.replace('WaitForExit(180000)', 'WaitForExit(90000)')
+
+exe_old = r'''$p=Start-Process $exe -ArgumentList '--runtime-smoke-test' -PassThru
+if(-not $p.WaitForExit(90000)){Stop-Process $p.Id -Force;throw 'exe runtime timeout'}
+if($p.ExitCode-ne 0 -or -not(Test-Path $marker)){throw 'exe runtime failed'}
+Write-Host 'EXE_RUNTIME_OK' '''.strip()
+exe_new = r'''$p=Start-Process $exe -ArgumentList '--runtime-smoke-test' -PassThru
+$deadline=(Get-Date).AddSeconds(60)
+while((Get-Date)-lt $deadline -and -not(Test-Path $marker) -and -not $p.HasExited){Start-Sleep -Milliseconds 500}
+if(-not(Test-Path $marker)){
+  if(-not $p.HasExited){& taskkill /PID $p.Id /T /F | Out-Null}
+  throw 'exe runtime marker missing'
+}
+if(-not $p.HasExited){& taskkill /PID $p.Id /T /F | Out-Null}
+Write-Host 'EXE_RUNTIME_OK' '''.strip()
+if exe_old not in text:
+    raise SystemExit('EXE smoke block anchor missing')
+text = text.replace(exe_old, exe_new, 1)
+
+installed_old = r'''$p=Start-Process $installed -ArgumentList '--runtime-smoke-test' -PassThru
+if(-not $p.WaitForExit(90000)){Stop-Process $p.Id -Force;throw 'installed runtime timeout'}
+if($p.ExitCode-ne 0 -or -not(Test-Path $marker)){throw 'installed runtime failed'}'''.strip()
+installed_new = r'''$p=Start-Process $installed -ArgumentList '--runtime-smoke-test' -PassThru
+$deadline=(Get-Date).AddSeconds(60)
+while((Get-Date)-lt $deadline -and -not(Test-Path $marker) -and -not $p.HasExited){Start-Sleep -Milliseconds 500}
+if(-not(Test-Path $marker)){
+  if(-not $p.HasExited){& taskkill /PID $p.Id /T /F | Out-Null}
+  throw 'installed runtime marker missing'
+}
+if(-not $p.HasExited){& taskkill /PID $p.Id /T /F | Out-Null}'''.strip()
+if installed_old not in text:
+    raise SystemExit('Installed smoke block anchor missing')
+text = text.replace(installed_old, installed_new, 1)
+
 ci.write_text(text, encoding='utf-8')
 print('CI_BRAND_STEP_PATCHED')
 print('CI_STANDALONE_PATCHED')
+print('CI_RUNTIME_MARKER_PATCHED')
