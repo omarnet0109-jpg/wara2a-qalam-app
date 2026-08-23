@@ -48,10 +48,41 @@ python -c "import sys;sys.path.insert(0,'app');import brand;print('VERSION',bran
 if needle not in text:
     raise SystemExit('CI brand verification anchor missing')
 text = text.replace(needle, replacement)
-# Nuitka onefile must unpack QtWebEngine before Python starts. On clean Windows
-# runners this can legitimately take over 45 seconds, so the smoke test waits
-# up to 3 minutes while still requiring the runtime marker and clean exit.
-text = text.replace('WaitForExit(45000)', 'WaitForExit(180000)')
+
+# Build as a standalone Windows app instead of onefile. This avoids a long
+# extraction pause before the splash screen and matches the Inno installer.
+text = text.replace('--onefile', '--standalone')
+text = text.replace("$exe=Join-Path $root 'build_output\\BashmohandesOmar.exe'", "$exe=Join-Path $root 'build_output\\main.dist\\BashmohandesOmar.exe'")
+text = text.replace("Copy-Item $exe \"$port\\BashmohandesOmar.exe\";'Windows 10/11 x64 Portable'|Set-Content \"$port\\README.txt\"", "Copy-Item (Join-Path $root 'build_output\\main.dist\\*') $port -Recurse -Force;'Windows 10/11 x64 Portable'|Set-Content \"$port\\README.txt\"")
+
+# Patch the source package's own Windows build files before they are tested
+# and later zipped for delivery.
+anchor = "Set-Location $root\n"
+source_fix = r'''@'
+from pathlib import Path
+root=Path.cwd()
+build=root/'build_windows_final.ps1'
+s=build.read_text(encoding='utf-8')
+s=s.replace('--onefile','--standalone')
+s=s.replace("build_output\\BashmohandesOmar.exe","build_output\\main.dist\\BashmohandesOmar.exe")
+build.write_text(s,encoding='utf-8')
+iss=root/'create_setup.iss'
+s=iss.read_text(encoding='utf-8')
+s=s.replace(r'build_output\BashmohandesOmar.dist\*',r'build_output\main.dist\*')
+iss.write_text(s,encoding='utf-8')
+print('SOURCE_BUILD_FILES_FIXED')
+'@ | Set-Content "$env:RUNNER_TEMP\sourcefix.py" -Encoding UTF8
+python "$env:RUNNER_TEMP\sourcefix.py"
+if($LASTEXITCODE-ne 0){exit $LASTEXITCODE}
+'''
+if source_fix not in text:
+    if anchor not in text:
+        raise SystemExit('CI source patch anchor missing')
+    text = text.replace(anchor, anchor + source_fix, 1)
+
+# Standalone startup should be quick, but retain a generous test timeout.
+text = text.replace('WaitForExit(45000)', 'WaitForExit(90000)')
+text = text.replace('WaitForExit(180000)', 'WaitForExit(90000)')
 ci.write_text(text, encoding='utf-8')
 print('CI_BRAND_STEP_PATCHED')
-print('CI_RUNTIME_TIMEOUT_PATCHED', text.count('WaitForExit(180000)'))
+print('CI_STANDALONE_PATCHED')
