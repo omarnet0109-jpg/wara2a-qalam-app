@@ -23,6 +23,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python .\windows-builder\ci_runtime_survival_patch.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python .\windows-builder\apply_ui_v92.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Remove-Item 'windows-builder/final_patch.b64.*' -Force -ErrorAction SilentlyContinue
           $parts = Get-ChildItem 'windows-builder/final_clean.b64.*' | Sort-Object Name
           if ($parts.Count -ne 6) { throw "Expected 6 clean patch parts, found $($parts.Count)" }
@@ -33,7 +35,7 @@ jobs:
       - name: Upload final files
         uses: actions/upload-artifact@v4
         with:
-          name: BashmohandesOmar-Final-Windows-v9.1
+          name: BashmohandesOmar-Final-Windows-v9.2-SimpleUI
           path: |
             Program-Source-Final.zip
             Program-Setup-Final.exe
