@@ -26,9 +26,7 @@ jobs:
           Remove-Item 'windows-builder/final_patch.b64.*' -Force -ErrorAction SilentlyContinue
           $parts = Get-ChildItem 'windows-builder/final_clean.b64.*' | Sort-Object Name
           if ($parts.Count -ne 6) { throw "Expected 6 clean patch parts, found $($parts.Count)" }
-          for ($i=0; $i -lt $parts.Count; $i++) {
-            Copy-Item $parts[$i].FullName ("windows-builder/final_patch.b64.{0}" -f $i) -Force
-          }
+          for ($i=0; $i -lt $parts.Count; $i++) { Copy-Item $parts[$i].FullName ("windows-builder/final_patch.b64.{0}" -f $i) -Force }
       - name: Build test package
         shell: pwsh
         run: .\windows-builder\final_ci.ps1
