@@ -1,5 +1,4 @@
 from pathlib import Path
-import hashlib
 
 ci = Path('windows-builder/final_ci.ps1')
 text = ci.read_text(encoding='utf-8')
