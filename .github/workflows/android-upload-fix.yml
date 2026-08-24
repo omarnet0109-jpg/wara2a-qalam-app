@@ -71,19 +71,21 @@ jobs:
           gradle -p "$ROOT" :app:assembleRelease --no-daemon --stacktrace
           test -f "$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
 
-      - name: Collect signing tools
+      - name: Align APK and collect signing tool
         shell: bash
         run: |
           set -euo pipefail
           ROOT="$GITHUB_WORKSPACE/native-build/WaraqaWaQalam_Android_App_v1.0.12"
           OUT="$GITHUB_WORKSPACE/build-artifact"
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           mkdir -p "$OUT/tools"
-          cp "$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk" "$OUT/WaraqaWaQalam-v1.0.12-unsigned.apk"
-          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" "$OUT/tools/apksigner.jar"
-          cp "$ANDROID_HOME/build-tools/36.0.0/zipalign" "$OUT/tools/zipalign"
-          chmod +x "$OUT/tools/zipalign"
+          "$BUILD_TOOLS/zipalign" -f -p 4 \
+            "$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk" \
+            "$OUT/WaraqaWaQalam-v1.0.12-aligned-unsigned.apk"
+          "$BUILD_TOOLS/zipalign" -c -p 4 "$OUT/WaraqaWaQalam-v1.0.12-aligned-unsigned.apk"
+          cp "$BUILD_TOOLS/lib/apksigner.jar" "$OUT/tools/apksigner.jar"
 
-      - name: Upload unsigned APK and tools
+      - name: Upload aligned APK and signing tool
         uses: actions/upload-artifact@v4
         with:
           name: WaraqaWaQalam-v1.0.12-build
