@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/android-upload-v1012
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
