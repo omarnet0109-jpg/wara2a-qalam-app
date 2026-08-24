@@ -1,0 +1,84 @@
+name: Build Android Upload Fix 1.0.12
+
+on:
+  push:
+    branches:
+      - fix/android-upload-v1012
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Ensure Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Restore native source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf native-build
+          mkdir native-build
+          cat native-upload-fix/source.b64.* | base64 -d > /tmp/wq-native.zip
+          unzip -q /tmp/wq-native.zip -d native-build
+          test -f native-build/WaraqaWaQalam_Android_App_v1.0.12/app/build.gradle.kts
+
+      - name: Verify upload implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=native-build/WaraqaWaQalam_Android_App_v1.0.12
+          grep -q 'Intent.ACTION_OPEN_DOCUMENT' "$ROOT/app/src/main/java/com/waraqawqalam/store/MainActivity.java"
+          grep -q 'Intent.EXTRA_ALLOW_MULTIPLE' "$ROOT/app/src/main/java/com/waraqawqalam/store/MainActivity.java"
+          grep -q 'onPermissionRequest' "$ROOT/app/src/main/java/com/waraqawqalam/store/MainActivity.java"
+          grep -q 'android.permission.CAMERA' "$ROOT/app/src/main/AndroidManifest.xml"
+          grep -q 'versionCode = 13' "$ROOT/app/build.gradle.kts"
+          grep -q 'versionName = "1.0.12"' "$ROOT/app/build.gradle.kts"
+
+      - name: Build unsigned release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE/native-build/WaraqaWaQalam_Android_App_v1.0.12"
+          gradle -p "$ROOT" :app:assembleRelease --no-daemon --stacktrace
+          test -f "$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
+
+      - name: Collect signing tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE/native-build/WaraqaWaQalam_Android_App_v1.0.12"
+          OUT="$GITHUB_WORKSPACE/build-artifact"
+          mkdir -p "$OUT/tools"
+          cp "$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk" "$OUT/WaraqaWaQalam-v1.0.12-unsigned.apk"
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" "$OUT/tools/apksigner.jar"
+          cp "$ANDROID_HOME/build-tools/36.0.0/zipalign" "$OUT/tools/zipalign"
+          chmod +x "$OUT/tools/zipalign"
+
+      - name: Upload unsigned APK and tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: WaraqaWaQalam-v1.0.12-build
+          path: build-artifact/
+          if-no-files-found: error
+          retention-days: 7
