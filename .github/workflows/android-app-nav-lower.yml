@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/android-app-nav-lower-v1013
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -74,7 +77,6 @@ jobs:
           g = re.sub(r'versionName\s*=\s*\"[^\"]+\"', 'versionName = \"1.0.13\"', g, count=1)
           gradle.write_text(g, encoding='utf-8')
 
-          # Recreate the same final launcher/splash branding used by the stable app.
           for p in app.rglob('*'):
               if p.is_file() and (p.name.startswith('ic_launcher') or p.name.startswith('ic_store') or p.name.startswith('ic_splash_logo')):
                   p.unlink()
