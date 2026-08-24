@@ -46,7 +46,9 @@ jobs:
           mkdir native-build
           cat native-upload-fix/source.b64.* | base64 -d > /tmp/wq-native.zip
           unzip -q /tmp/wq-native.zip -d native-build
-          test -f native-build/WaraqaWaQalam_Android_App_v1.0.12/app/build.gradle.kts
+          ROOT=native-build/WaraqaWaQalam_Android_App_v1.0.12
+          test -f "$ROOT/app/build.gradle.kts"
+          sed -i 's/import android\.webkit\.SslError;/import android.net.http.SslError;/' "$ROOT/app/src/main/java/com/waraqawqalam/store/MainActivity.java"
 
       - name: Verify upload implementation
         shell: bash
@@ -56,6 +58,7 @@ jobs:
           grep -q 'Intent.ACTION_OPEN_DOCUMENT' "$ROOT/app/src/main/java/com/waraqawqalam/store/MainActivity.java"
           grep -q 'Intent.EXTRA_ALLOW_MULTIPLE' "$ROOT/app/src/main/java/com/waraqawqalam/store/MainActivity.java"
           grep -q 'onPermissionRequest' "$ROOT/app/src/main/java/com/waraqawqalam/store/MainActivity.java"
+          grep -q 'import android.net.http.SslError;' "$ROOT/app/src/main/java/com/waraqawqalam/store/MainActivity.java"
           grep -q 'android.permission.CAMERA' "$ROOT/app/src/main/AndroidManifest.xml"
           grep -q 'versionCode = 13' "$ROOT/app/build.gradle.kts"
           grep -q 'versionName = "1.0.12"' "$ROOT/app/build.gradle.kts"
