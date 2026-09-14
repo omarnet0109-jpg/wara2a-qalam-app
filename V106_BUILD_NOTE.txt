@@ -1,0 +1,1 @@
+PR build must verify launcher resources through aapt2 before APK delivery.
